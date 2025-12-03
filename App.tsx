@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import Toolbar from './components/Toolbar';
 import Canvas from './components/Canvas';
 import PropertiesPanel from './components/PropertiesPanel';
 import CodeEditor from './components/CodeEditor';
 import AIAssistant from './components/AIAssistant';
-import { Shape, ShapeType, MachineSettings } from './types';
+import { Shape, ShapeType, MachineSettings, Tool } from './types';
 import { generateGCode } from './services/gcodeService';
 import { generateShapesFromPrompt, explainGCode } from './services/geminiService';
 
@@ -18,7 +18,8 @@ const DEFAULT_SETTINGS: MachineSettings = {
 
 const App: React.FC = () => {
   const [shapes, setShapes] = useState<Shape[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [activeTool, setActiveTool] = useState<Tool>(Tool.SELECT);
   const [gcode, setGcode] = useState<string>('');
   const [isManualMode, setIsManualMode] = useState(false);
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
@@ -51,16 +52,54 @@ const App: React.FC = () => {
     }
 
     setShapes(prev => [...prev, newShape]);
-    setSelectedId(id);
+    setSelectedIds([id]);
+    setActiveTool(Tool.SELECT); // Switch back to select mode after adding
   };
 
   const handleUpdateShape = (updatedShape: Shape) => {
     setShapes(prev => prev.map(s => s.id === updatedShape.id ? updatedShape : s));
   };
 
-  const handleDeleteShape = (id: string) => {
-    setShapes(prev => prev.filter(s => s.id !== id));
-    if (selectedId === id) setSelectedId(null);
+  const handleUpdateShapes = (updatedShapes: Shape[]) => {
+    const updatesMap = new Map(updatedShapes.map(s => [s.id, s]));
+    setShapes(prev => prev.map(s => updatesMap.get(s.id) || s));
+  };
+
+  const handleDeleteShapes = (idsToDelete: string[]) => {
+    setShapes(prev => prev.filter(s => !idsToDelete.includes(s.id)));
+    setSelectedIds(prev => prev.filter(id => !idsToDelete.includes(id)));
+  };
+
+  const handleSelectShape = (id: string | null, isMulti: boolean) => {
+    if (id === null) {
+      if (!isMulti) setSelectedIds([]);
+      return;
+    }
+
+    if (isMulti) {
+        setSelectedIds(prev => {
+            if (prev.includes(id)) {
+                return prev.filter(existingId => existingId !== id);
+            } else {
+                return [...prev, id];
+            }
+        });
+    } else {
+        setSelectedIds([id]);
+    }
+  };
+
+  // Callback for marquee selection from canvas
+  const handleMultiSelect = (ids: string[], addToExisting: boolean) => {
+    if (addToExisting) {
+        setSelectedIds(prev => {
+            const newSet = new Set(prev);
+            ids.forEach(id => newSet.add(id));
+            return Array.from(newSet);
+        });
+    } else {
+        setSelectedIds(ids);
+    }
   };
 
   const handleCodeChange = (newCode: string) => {
@@ -100,28 +139,39 @@ const App: React.FC = () => {
     }
   };
 
-  const selectedShape = shapes.find(s => s.id === selectedId) || null;
+  const selectedShapes = shapes.filter(s => selectedIds.includes(s.id));
 
   return (
     <div className="flex flex-col md:flex-row h-[100dvh] bg-slate-900 text-slate-100 font-sans overflow-hidden">
-      <Toolbar onAddShape={handleAddShape} onOpenAI={() => setIsAIModalOpen(true)} />
+      <Toolbar 
+        activeTool={activeTool}
+        onSelectTool={setActiveTool}
+        onAddShape={handleAddShape} 
+        onOpenAI={() => setIsAIModalOpen(true)} 
+      />
       
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
-        {/* Left Side: Canvas & Visuals */}
         <div className="flex-1 flex flex-col border-b md:border-b-0 md:border-r border-slate-700 relative bg-slate-950 overflow-hidden">
           <Canvas 
-            shapes={shapes} 
+            shapes={shapes}
+            activeTool={activeTool} 
             onUpdateShape={handleUpdateShape}
-            onSelectShape={setSelectedId}
-            selectedId={selectedId}
-            onDeleteShape={handleDeleteShape}
+            onUpdateShapes={handleUpdateShapes}
+            onSelectShape={handleSelectShape}
+            onMultiSelect={handleMultiSelect}
+            selectedIds={selectedIds}
+            onDeleteShapes={handleDeleteShapes}
           />
         </div>
 
-        {/* Right Side: Controls & Code */}
         <div className="h-1/3 md:h-full w-full md:w-[400px] flex flex-col bg-slate-800 shrink-0 shadow-2xl z-20">
           <div className="h-1/2 border-b border-slate-700 overflow-y-auto custom-scrollbar">
-            <PropertiesPanel shape={selectedShape} onChange={handleUpdateShape} />
+            <PropertiesPanel 
+                selectedShapes={selectedShapes} 
+                onUpdateShape={handleUpdateShape}
+                onUpdateShapes={handleUpdateShapes}
+                onDelete={handleDeleteShapes}
+            />
             <div className="p-4 border-t border-slate-700">
                 <h4 className="text-xs font-semibold text-slate-400 mb-2">Machine Settings (Global)</h4>
                 <div className="grid grid-cols-2 gap-2 text-xs text-slate-500">

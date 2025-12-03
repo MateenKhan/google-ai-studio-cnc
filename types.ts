@@ -4,6 +4,11 @@ export enum ShapeType {
   TEXT = 'TEXT',
 }
 
+export enum Tool {
+  SELECT = 'SELECT',
+  PAN = 'PAN',
+}
+
 export interface BaseShape {
   id: string;
   type: ShapeType;

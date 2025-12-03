@@ -1,13 +1,15 @@
 import React from 'react';
-import { Square, Circle, Type, Wand2 } from 'lucide-react';
-import { ShapeType } from '../types';
+import { Square, Circle, Type, Wand2, MousePointer2, Hand } from 'lucide-react';
+import { ShapeType, Tool } from '../types';
 
 interface ToolbarProps {
+  activeTool: Tool;
+  onSelectTool: (tool: Tool) => void;
   onAddShape: (type: ShapeType) => void;
   onOpenAI: () => void;
 }
 
-const Toolbar: React.FC<ToolbarProps> = ({ onAddShape, onOpenAI }) => {
+const Toolbar: React.FC<ToolbarProps> = ({ activeTool, onSelectTool, onAddShape, onOpenAI }) => {
   return (
     <div className="bg-slate-800 border-r-0 border-b md:border-b-0 md:border-r border-slate-700 flex flex-row md:flex-col items-center justify-between md:justify-start p-2 md:py-4 gap-2 md:gap-4 z-10 w-full md:w-16 h-16 md:h-full order-last md:order-first shrink-0">
       <div className="hidden md:block mb-4">
@@ -17,6 +19,40 @@ const Toolbar: React.FC<ToolbarProps> = ({ onAddShape, onOpenAI }) => {
       </div>
       
       <div className="flex flex-row md:flex-col gap-2 md:gap-4 flex-1 justify-center md:justify-start">
+        {/* Tools Section */}
+        <div className="flex flex-row md:flex-col gap-2 pb-2 border-r md:border-r-0 md:border-b border-slate-700/50 pr-2 md:pr-0 md:pb-2">
+            <button 
+                onClick={() => onSelectTool(Tool.SELECT)}
+                className={`p-3 rounded-xl transition-all group relative ${
+                    activeTool === Tool.SELECT 
+                    ? 'bg-sky-600 text-white shadow-lg shadow-sky-900/30' 
+                    : 'bg-slate-700/50 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
+                }`}
+                title="Select Tool"
+            >
+                <MousePointer2 size={20} />
+                <span className="hidden md:block absolute left-14 bg-slate-900 text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap border border-slate-700 pointer-events-none z-50">
+                Select
+                </span>
+            </button>
+
+            <button 
+                onClick={() => onSelectTool(Tool.PAN)}
+                className={`p-3 rounded-xl transition-all group relative ${
+                    activeTool === Tool.PAN 
+                    ? 'bg-sky-600 text-white shadow-lg shadow-sky-900/30' 
+                    : 'bg-slate-700/50 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
+                }`}
+                title="Move View (Pan)"
+            >
+                <Hand size={20} />
+                <span className="hidden md:block absolute left-14 bg-slate-900 text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap border border-slate-700 pointer-events-none z-50">
+                Move View
+                </span>
+            </button>
+        </div>
+
+        {/* Shapes Section */}
         <button 
             onClick={() => onAddShape(ShapeType.RECTANGLE)}
             className="p-3 bg-slate-700 hover:bg-slate-600 rounded-xl text-slate-200 transition-all hover:scale-105 group relative"

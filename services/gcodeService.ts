@@ -1,5 +1,47 @@
 import { Shape, ShapeType, MachineSettings } from '../types';
 
+// A minimal "Stick Font" definition (0-1 normalized coordinates)
+// Format: List of paths. Each path is a list of points.
+const SIMPLE_FONT: Record<string, number[][][]> = {
+  'A': [[[0,0], [0.5,1], [1,0]], [[0.2,0.4], [0.8,0.4]]],
+  'B': [[[0,0], [0,1], [0.8,1], [0.8,0.5], [0,0.5], [0.8,0.5], [0.8,0], [0,0]]],
+  'C': [[[1,0.2], [0.5,0], [0,0.5], [0.5,1], [1,0.8]]],
+  'D': [[[0,0], [0,1], [0.6,1], [1,0.5], [0.6,0], [0,0]]],
+  'E': [[[1,0], [0,0], [0,1], [1,1]], [[0,0.5], [0.8,0.5]]],
+  'F': [[[0,0], [0,1], [1,1]], [[0,0.5], [0.8,0.5]]],
+  'G': [[[1,0.8], [1,0.5], [0.5,0.5]], [[0.5,0.5], [1,0.2], [0.5,0], [0,0.5], [0.5,1], [1,0.8]]],
+  'H': [[[0,0], [0,1]], [[1,0], [1,1]], [[0,0.5], [1,0.5]]],
+  'I': [[[0.5,0], [0.5,1]], [[0,0], [1,0]], [[0,1], [1,1]]],
+  'J': [[[1,1], [1,0.2], [0.5,0], [0,0.2]]],
+  'K': [[[0,0], [0,1]], [[1,1], [0,0.5], [1,0]]],
+  'L': [[[0,1], [0,0], [1,0]]],
+  'M': [[[0,0], [0,1], [0.5,0.5], [1,1], [1,0]]],
+  'N': [[[0,0], [0,1], [1,0], [1,1]]],
+  'O': [[[0.5,0], [0,0.5], [0.5,1], [1,0.5], [0.5,0]]],
+  'P': [[[0,0], [0,1], [0.8,1], [0.8,0.5], [0,0.5]]],
+  'Q': [[[0.5,0], [0,0.5], [0.5,1], [1,0.5], [0.5,0]], [[0.7,0.3], [1,0]]],
+  'R': [[[0,0], [0,1], [0.8,1], [0.8,0.5], [0,0.5], [1,0]]],
+  'S': [[[1,0.8], [0.5,1], [0,0.8], [1,0.2], [0.5,0], [0,0.2]]],
+  'T': [[[0.5,0], [0.5,1]], [[0,1], [1,1]]],
+  'U': [[[0,1], [0,0.2], [0.5,0], [1,0.2], [1,1]]],
+  'V': [[[0,1], [0.5,0], [1,1]]],
+  'W': [[[0,1], [0.2,0], [0.5,0.5], [0.8,0], [1,1]]],
+  'X': [[[0,0], [1,1]], [[0,1], [1,0]]],
+  'Y': [[[0,1], [0.5,0.5]], [[1,1], [0.5,0.5]], [[0.5,0.5], [0.5,0]]],
+  'Z': [[[0,1], [1,1], [0,0], [1,0]]],
+  '0': [[[0.5,0], [0,0.5], [0.5,1], [1,0.5], [0.5,0]], [[0,0], [1,1]]], // Slashed zero
+  '1': [[[0,0.8], [0.5,1], [0.5,0]], [[0,0], [1,0]]],
+  '2': [[[0,0.8], [0.5,1], [1,0.8], [0,0], [1,0]]],
+  '3': [[[0,0.8], [0.5,1], [1,0.8], [0.5,0.5]], [[0.5,0.5], [1,0.2], [0.5,0], [0,0.2]]],
+  '4': [[[0.8,0], [0.8,1]], [[0,1], [0,0.4], [1,0.4]]],
+  '5': [[[1,1], [0,1], [0,0.6], [0.5,0.6], [1,0.3], [0.5,0], [0,0.2]]],
+  '6': [[[1,0.8], [0.5,1], [0,0.5], [0.5,0], [1,0.3], [0,0.5]]],
+  '7': [[[0,1], [1,1], [0.5,0]]],
+  '8': [[[0.5,0.5], [1,0.8], [0.5,1], [0,0.8], [0.5,0.5], [1,0.2], [0.5,0], [0,0.2], [0.5,0.5]]],
+  '9': [[[0,0.2], [0.5,0], [1,0.5], [0.5,1], [0,0.7], [1,0.5]]],
+  ' ': []
+};
+
 export const generateGCode = (shapes: Shape[], settings: MachineSettings): string => {
   const { feedRate, safeHeight, cutDepth } = settings;
   const lines: string[] = [];
@@ -43,14 +85,51 @@ export const generateGCode = (shapes: Shape[], settings: MachineSettings): strin
         break;
 
       case ShapeType.TEXT:
-        lines.push(`; Text engraving not fully implemented for font paths`);
-        lines.push(`; Text: "${shape.text}" at ${shape.x},${shape.y}`);
-        // Placeholder box for text
-        const estimatedWidth = shape.text.length * (shape.fontSize * 0.6);
-        lines.push(`G0 X${shape.x} Y${shape.y}`);
-        lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
-        lines.push(`G1 X${shape.x + estimatedWidth} Y${shape.y} F${feedRate}`);
-        lines.push(`G0 Z${safeHeight}`);
+        lines.push(`; Text: "${shape.text}"`);
+        let currentX = shape.x;
+        const charSpacing = shape.fontSize * 0.1;
+        const charWidth = shape.fontSize * 0.6; // approx width
+        
+        for (const char of shape.text.toUpperCase()) {
+            const paths = SIMPLE_FONT[char] || SIMPLE_FONT['?'] || [];
+            
+            if (paths.length === 0 && char !== ' ') {
+                // Unknown char box
+                lines.push(`; Unknown char: ${char}`);
+                lines.push(`G0 X${currentX} Y${shape.y}`);
+                lines.push(`G1 Z${-cutDepth}`);
+                lines.push(`G1 X${currentX + charWidth} Y${shape.y}`);
+                lines.push(`G1 X${currentX + charWidth} Y${shape.y + shape.fontSize}`);
+                lines.push(`G1 X${currentX} Y${shape.y + shape.fontSize}`);
+                lines.push(`G1 X${currentX} Y${shape.y}`);
+                lines.push(`G0 Z${safeHeight}`);
+            } else if (char === ' ') {
+                // Just move
+            } else {
+                paths.forEach(path => {
+                   if (path.length === 0) return;
+                   
+                   // Move to first point
+                   const startX = currentX + (path[0][0] * charWidth);
+                   // In SVG/Canvas text grows down, but in CNC usually Y+ is up.
+                   // Let's assume user expects standard math coordinates where Y+ is Up.
+                   // But font definitions are usually 0,0 at bottom-left for fonts.
+                   // Our definitions above: 0,0 bottom-left, 1,1 top-right.
+                   const startY = shape.y + (path[0][1] * shape.fontSize);
+
+                   lines.push(`G0 X${startX.toFixed(3)} Y${startY.toFixed(3)}`);
+                   lines.push(`G1 Z${-cutDepth}`);
+                   
+                   for (let i = 1; i < path.length; i++) {
+                       const px = currentX + (path[i][0] * charWidth);
+                       const py = shape.y + (path[i][1] * shape.fontSize);
+                       lines.push(`G1 X${px.toFixed(3)} Y${py.toFixed(3)}`);
+                   }
+                   lines.push(`G0 Z${safeHeight}`);
+                });
+            }
+            currentX += charWidth + charSpacing;
+        }
         break;
     }
     lines.push('');
