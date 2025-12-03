@@ -4,10 +4,10 @@ import Toolbar from './components/Toolbar';
 import Canvas from './components/Canvas';
 import PropertiesPanel from './components/PropertiesPanel';
 import CodeEditor from './components/CodeEditor';
-import AIAssistant from './components/AIAssistant';
+// import AIAssistant from './components/AIAssistant';
 import { Shape, ShapeType, MachineSettings, Tool } from './types';
 import { generateGCode } from './services/gcodeService';
-import { generateShapesFromPrompt, explainGCode } from './services/geminiService';
+// import { generateShapesFromPrompt, explainGCode } from './services/geminiService';
 
 const DEFAULT_SETTINGS: MachineSettings = {
   feedRate: 800,
@@ -112,33 +112,33 @@ const App: React.FC = () => {
     setIsManualMode(false);
   };
 
-  const handleAISubmit = async (prompt: string) => {
-    setIsAILoading(true);
-    try {
-      const newShapes = await generateShapesFromPrompt(prompt, shapes);
-      setShapes(newShapes);
-      setIsAIModalOpen(false);
-    } catch (error) {
-      alert("Failed to generate shapes. Check console for details.");
-    } finally {
-      setIsAILoading(false);
-    }
-  };
+  // const handleAISubmit = async (prompt: string) => {
+  //   setIsAILoading(true);
+  //   try {
+  //     const newShapes = await generateShapesFromPrompt(prompt, shapes);
+  //     setShapes(newShapes);
+  //     setIsAIModalOpen(false);
+  //   } catch (error) {
+  //     alert("Failed to generate shapes. Check console for details.");
+  //   } finally {
+  //     setIsAILoading(false);
+  //   }
+  // };
 
-  const handleExplainCode = async () => {
-    if (!gcode) return;
-    setIsAILoading(true);
-    try {
-        const explanation = await explainGCode(gcode);
-        const commentBlock = explanation.split('\n').map(l => `; ${l}`).join('\n');
-        setGcode(`${commentBlock}\n\n${gcode}`);
-        setIsManualMode(true);
-    } catch (e) {
-        console.error(e);
-    } finally {
-        setIsAILoading(false);
-    }
-  };
+  // const handleExplainCode = async () => {
+  //   if (!gcode) return;
+  //   setIsAILoading(true);
+  //   try {
+  //       const explanation = await explainGCode(gcode);
+  //       const commentBlock = explanation.split('\n').map(l => `; ${l}`).join('\n');
+  //       setGcode(`${commentBlock}\n\n${gcode}`);
+  //       setIsManualMode(true);
+  //   } catch (e) {
+  //       console.error(e);
+  //   } finally {
+  //       setIsAILoading(false);
+  //   }
+  // };
 
   const selectedShapes = shapes.filter(s => selectedIds.includes(s.id));
 
@@ -190,18 +190,18 @@ const App: React.FC = () => {
             code={gcode} 
             onChange={handleCodeChange} 
             onRegenerate={handleRegenerate}
-            onExplain={handleExplainCode}
+            // onExplain={handleExplainCode}
             isManualMode={isManualMode}
           />
         </div>
       </main>
 
-      <AIAssistant 
+      {/* <AIAssistant 
         isOpen={isAIModalOpen} 
         onClose={() => setIsAIModalOpen(false)} 
         onSubmit={handleAISubmit}
         isLoading={isAILoading}
-      />
+      /> */}
     </div>
   );
 };
