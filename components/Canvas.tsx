@@ -354,12 +354,15 @@ const Canvas: React.FC<CanvasProps> = ({
            return null;
         })}
 
-        {/* Dimensions Layer - Rendered on top of everything */}
-        {showDimensions && shapes.map(shape => (
+        {/* Dimensions Layer - Rendered on top of everything, only for selected items */}
+        {showDimensions && shapes.map(shape => {
+            if (!selectedIds.includes(shape.id)) return null;
+            return (
              <React.Fragment key={`dim-${shape.id}`}>
                  {renderDimensions(shape)}
              </React.Fragment>
-        ))}
+            );
+        })}
 
         {/* Marquee Selection Box */}
         {marquee && (

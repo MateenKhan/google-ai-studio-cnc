@@ -1,5 +1,5 @@
 import { Shape, ShapeType, MachineSettings } from '../types';
-// import opentype from 'opentype.js';
+import opentype from 'opentype.js';
 
 // Cache for loaded fonts
 const fontCache: Record<string, opentype.Font> = {};
