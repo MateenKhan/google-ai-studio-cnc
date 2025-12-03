@@ -53,8 +53,6 @@ const Canvas: React.FC<CanvasProps> = ({
     pt.y = event.clientY;
     const ctm = svg.getScreenCTM();
     if (!ctm) return { x: 0, y: 0 };
-    // We do NOT manually adjust for pan here because getScreenCTM takes the viewBox into account automatically
-    // if the viewBox is updated in the DOM.
     return pt.matrixTransform(ctm.inverse());
   };
 
@@ -68,8 +66,6 @@ const Canvas: React.FC<CanvasProps> = ({
     }
 
     if (activeTool === Tool.SELECT) {
-        // If we clicked background (not a shape)
-        // Note: Shape clicks stopPropagation, so this only fires on BG click
         setDragMode('MARQUEE');
         setIsDragging(true);
         
@@ -77,7 +73,6 @@ const Canvas: React.FC<CanvasProps> = ({
         marqueeStartRef.current = { x: point.x, y: point.y };
         setMarquee({ x: point.x, y: point.y, width: 0, height: 0 });
         
-        // If shift not held, clear previous selection
         if (!e.shiftKey) {
             onSelectShape(null, false);
         }
@@ -89,13 +84,12 @@ const Canvas: React.FC<CanvasProps> = ({
   const handleShapePointerDown = (e: React.PointerEvent, shape: Shape) => {
     if (activeTool !== Tool.SELECT) return;
     
-    e.stopPropagation(); // Prevent canvas background click
+    e.stopPropagation(); 
     e.currentTarget.setPointerCapture(e.pointerId);
     
     const isMultiKey = e.shiftKey;
     const isAlreadySelected = selectedIds.includes(shape.id);
 
-    // Selection Logic
     if (isMultiKey) {
         onSelectShape(shape.id, true);
     } else {
@@ -104,12 +98,10 @@ const Canvas: React.FC<CanvasProps> = ({
         }
     }
 
-    // Determine ids to drag (wait for state update or use calculated list)
     let idsToDrag = selectedIds;
     if (!isAlreadySelected && !isMultiKey) idsToDrag = [shape.id];
     else if (isMultiKey && !isAlreadySelected) idsToDrag = [...selectedIds, shape.id];
     
-    // Prepare Drag
     const point = getSVGPoint(e);
     const initialPosMap = new Map<string, {x: number, y: number}>();
     
@@ -136,26 +128,17 @@ const Canvas: React.FC<CanvasProps> = ({
     if (dragMode === 'PAN' && panStartRef.current) {
         const dx = e.clientX - panStartRef.current.x;
         const dy = e.clientY - panStartRef.current.y;
-        
-        // In SVG viewBox, moving viewBox negative X moves view Right.
-        // So dragging mouse Right (positive dx) should move view Right (decrease viewBox X).
-        setPan(prev => ({
-            x: prev.x + dx,
-            y: prev.y + dy
-        }));
-        
+        setPan(prev => ({ x: prev.x + dx, y: prev.y + dy }));
         panStartRef.current = { x: e.clientX, y: e.clientY };
     }
 
     if (dragMode === 'MARQUEE' && marqueeStartRef.current) {
         const point = getSVGPoint(e);
         const start = marqueeStartRef.current;
-        
         const x = Math.min(start.x, point.x);
         const y = Math.min(start.y, point.y);
         const width = Math.abs(point.x - start.x);
         const height = Math.abs(point.y - start.y);
-        
         setMarquee({ x, y, width, height });
     }
 
@@ -185,7 +168,6 @@ const Canvas: React.FC<CanvasProps> = ({
   const checkIntersection = (rect: {x: number, y: number, width: number, height: number}) => {
      const ids: string[] = [];
      shapes.forEach(shape => {
-         // Simple bounding box for shapes
          let shapeRect = { x: 0, y: 0, width: 0, height: 0 };
          if (shape.type === ShapeType.RECTANGLE) {
              const s = shape as RectangleShape;
@@ -195,16 +177,13 @@ const Canvas: React.FC<CanvasProps> = ({
              shapeRect = { x: s.x - s.radius, y: s.y - s.radius, width: s.radius * 2, height: s.radius * 2 };
          } else if (shape.type === ShapeType.TEXT) {
              const s = shape as TextShape;
-             // Approx text size
              const w = s.text.length * (s.fontSize * 0.6);
              shapeRect = { x: s.x, y: s.y - s.fontSize, width: w, height: s.fontSize };
          }
 
-         // Check overlap
          const x_overlap = Math.max(0, Math.min(rect.x + rect.width, shapeRect.x + shapeRect.width) - Math.max(rect.x, shapeRect.x));
          const y_overlap = Math.max(0, Math.min(rect.y + rect.height, shapeRect.y + shapeRect.height) - Math.max(rect.y, shapeRect.y));
          
-         // If overlap area > 0 (or strictly inside? usually intersection is enough for drag select)
          if (x_overlap > 0 && y_overlap > 0) {
              ids.push(shape.id);
          }
@@ -234,45 +213,53 @@ const Canvas: React.FC<CanvasProps> = ({
 
   // Helper for Dimension Lines
   const renderDimensions = (shape: Shape) => {
-      const color = "#facc15"; // Yellow
-      const strokeWidth = 1;
-      const textStyle = { fill: color, fontSize: 10, fontFamily: "sans-serif" };
+      // Use bright colors to stand out against slate background
+      const dimColor = "#22d3ee"; // Cyan-400
+      const strokeWidth = 1.5;
+      const textStyle = { fill: "#e2e8f0", fontSize: 12, fontFamily: "sans-serif", fontWeight: "bold" };
+      const bgStyle = { fill: "rgba(15, 23, 42, 0.7)" };
 
       if (shape.type === ShapeType.RECTANGLE) {
           const s = shape as RectangleShape;
           return (
-              <g pointerEvents="none" opacity="0.8">
-                  {/* Width Dimension */}
-                  <line x1={s.x} y1={s.y - 10} x2={s.x + s.width} y2={s.y - 10} stroke={color} strokeWidth={strokeWidth} markerEnd="url(#arrow)" markerStart="url(#arrow-start)" />
-                  <text x={s.x + s.width / 2} y={s.y - 15} textAnchor="middle" {...textStyle}>{s.width}mm</text>
+              <g pointerEvents="none" className="select-none">
+                  {/* Width Dimension (Top) */}
+                  <line x1={s.x} y1={s.y - 15} x2={s.x + s.width} y2={s.y - 15} stroke={dimColor} strokeWidth={strokeWidth} markerEnd="url(#arrow)" markerStart="url(#arrow-start)" />
+                  <line x1={s.x} y1={s.y} x2={s.x} y2={s.y - 20} stroke={dimColor} strokeWidth="0.5" strokeDasharray="2 2"/>
+                  <line x1={s.x + s.width} y1={s.y} x2={s.x + s.width} y2={s.y - 20} stroke={dimColor} strokeWidth="0.5" strokeDasharray="2 2"/>
                   
-                  {/* Height Dimension */}
-                  <line x1={s.x - 10} y1={s.y} x2={s.x - 10} y2={s.y + s.height} stroke={color} strokeWidth={strokeWidth} />
-                  <text x={s.x - 15} y={s.y + s.height / 2} textAnchor="end" alignmentBaseline="middle" {...textStyle}>{s.height}mm</text>
+                  <rect x={s.x + s.width / 2 - 20} y={s.y - 28} width="40" height="14" rx="2" {...bgStyle} />
+                  <text x={s.x + s.width / 2} y={s.y - 19} textAnchor="middle" {...textStyle}>{s.width}mm</text>
+                  
+                  {/* Height Dimension (Left) */}
+                  <line x1={s.x - 15} y1={s.y} x2={s.x - 15} y2={s.y + s.height} stroke={dimColor} strokeWidth={strokeWidth} markerEnd="url(#arrow)" markerStart="url(#arrow-start)" />
+                  <line x1={s.x} y1={s.y} x2={s.x - 20} y2={s.y} stroke={dimColor} strokeWidth="0.5" strokeDasharray="2 2"/>
+                  <line x1={s.x} y1={s.y + s.height} x2={s.x - 20} y2={s.y + s.height} stroke={dimColor} strokeWidth="0.5" strokeDasharray="2 2"/>
+
+                  <rect x={s.x - 55} y={s.y + s.height / 2 - 7} width="40" height="14" rx="2" {...bgStyle} />
+                  <text x={s.x - 35} y={s.y + s.height / 2 + 4} textAnchor="middle" {...textStyle}>{s.height}mm</text>
               </g>
           );
       }
       if (shape.type === ShapeType.CIRCLE) {
           const s = shape as CircleShape;
            return (
-              <g pointerEvents="none" opacity="0.8">
+              <g pointerEvents="none" className="select-none">
                   {/* Radius Dimension */}
-                  <line x1={s.x} y1={s.y} x2={s.x + s.radius} y2={s.y} stroke={color} strokeWidth={strokeWidth} />
-                  <text x={s.x + s.radius / 2} y={s.y - 5} textAnchor="middle" {...textStyle}>R{s.radius}</text>
+                  <line x1={s.x} y1={s.y} x2={s.x + s.radius} y2={s.y} stroke={dimColor} strokeWidth={strokeWidth} markerEnd="url(#arrow)" />
+                  <rect x={s.x + s.radius / 2 - 15} y={s.y - 18} width="30" height="14" rx="2" {...bgStyle} />
+                  <text x={s.x + s.radius / 2} y={s.y - 7} textAnchor="middle" {...textStyle}>R{s.radius}</text>
               </g>
           );
       }
       return null;
   };
 
-  // ViewBox Calculation
-  // Base: -20 -20 540 540
-  // Pan moves the viewport. So ViewBox X = BaseX - PanX
   const viewBoxStr = `${-20 - pan.x} ${-20 - pan.y} 540 540`;
 
   return (
     <div className={`flex-1 bg-slate-900 relative overflow-hidden flex flex-col items-center justify-center min-h-[400px] ${activeTool === Tool.PAN ? 'cursor-grab active:cursor-grabbing' : ''}`}>
-      <div className="absolute top-4 left-4 text-slate-500 text-sm select-none pointer-events-none z-10">
+      <div className="absolute top-4 left-4 text-slate-500 text-sm select-none pointer-events-none z-10 bg-slate-900/50 backdrop-blur rounded px-2">
         Canvas (500mm x 500mm)
       </div>
 
@@ -288,12 +275,11 @@ const Canvas: React.FC<CanvasProps> = ({
           <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
             <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#334155" strokeWidth="0.5" />
           </pattern>
-          {/* Arrow markers for dimensions */}
           <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-            <path d="M0,0 L0,6 L6,3 z" fill="#facc15" />
+            <path d="M0,0 L0,6 L6,3 z" fill="#22d3ee" />
           </marker>
           <marker id="arrow-start" markerWidth="6" markerHeight="6" refX="1" refY="3" orient="auto-start-reverse">
-             <path d="M0,0 L0,6 L6,3 z" fill="#facc15" />
+             <path d="M0,0 L0,6 L6,3 z" fill="#22d3ee" />
           </marker>
         </defs>
         
@@ -368,7 +354,7 @@ const Canvas: React.FC<CanvasProps> = ({
            return null;
         })}
 
-        {/* Dimensions Layer - Rendered on top */}
+        {/* Dimensions Layer - Rendered on top of everything */}
         {showDimensions && shapes.map(shape => (
              <React.Fragment key={`dim-${shape.id}`}>
                  {renderDimensions(shape)}

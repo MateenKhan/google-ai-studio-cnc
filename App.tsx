@@ -8,6 +8,7 @@ import CodeEditor from './components/CodeEditor';
 import { Shape, ShapeType, MachineSettings, Tool } from './types';
 import { generateGCode } from './services/gcodeService';
 // import { generateShapesFromPrompt, explainGCode } from './services/geminiService';
+import { ChevronLeft, ChevronRight, Menu } from 'lucide-react';
 
 const DEFAULT_SETTINGS: MachineSettings = {
   feedRate: 800,
@@ -25,13 +26,20 @@ const App: React.FC = () => {
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [isAILoading, setIsAILoading] = useState(false);
   const [showDimensions, setShowDimensions] = useState(false);
+  
+  // Layout State
+  const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(true);
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
 
-  // Auto-generate G-code when shapes change, unless in manual mode
+  // Auto-generate G-code when shapes change
   useEffect(() => {
+    let isMounted = true;
     if (!isManualMode) {
-      const code = generateGCode(shapes, DEFAULT_SETTINGS);
-      setGcode(code);
+      generateGCode(shapes, DEFAULT_SETTINGS).then(code => {
+          if(isMounted) setGcode(code);
+      });
     }
+    return () => { isMounted = false; };
   }, [shapes, isManualMode]);
 
   const handleAddShape = (type: ShapeType) => {
@@ -144,31 +152,67 @@ const App: React.FC = () => {
 
   return (
     <div className="flex flex-col md:flex-row h-[100dvh] bg-slate-900 text-slate-100 font-sans overflow-hidden">
-      <Toolbar 
-        activeTool={activeTool}
-        onSelectTool={setActiveTool}
-        onAddShape={handleAddShape} 
-        onOpenAI={() => setIsAIModalOpen(true)}
-        showDimensions={showDimensions}
-        onToggleDimensions={() => setShowDimensions(!showDimensions)}
-      />
       
+      {/* Left Sidebar (Toolbar) */}
+      <div className={`${isLeftPanelOpen ? 'w-16 md:w-20' : 'w-0'} transition-all duration-300 relative bg-slate-800 border-r border-slate-700 flex flex-col shrink-0`}>
+          <div className="overflow-hidden h-full">
+            <Toolbar 
+                activeTool={activeTool}
+                onSelectTool={setActiveTool}
+                onAddShape={handleAddShape} 
+                onOpenAI={() => setIsAIModalOpen(true)}
+                showDimensions={showDimensions}
+                onToggleDimensions={() => setShowDimensions(!showDimensions)}
+            />
+          </div>
+      </div>
+      
+      {/* Toggle Left Button */}
+      <button 
+        onClick={() => setIsLeftPanelOpen(!isLeftPanelOpen)}
+        className="absolute left-0 top-1/2 -translate-y-1/2 z-30 bg-slate-800 text-slate-400 p-1 rounded-r border-y border-r border-slate-700 hover:text-white hover:bg-slate-700 transition-transform"
+        style={{ transform: isLeftPanelOpen ? 'translateX(calc(100% + 4rem))' : 'translateX(0)', left: isLeftPanelOpen ? '0' : '0' }}
+      >
+          {isLeftPanelOpen ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
+      </button>
+
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
-        <div className="flex-1 flex flex-col border-b md:border-b-0 md:border-r border-slate-700 relative bg-slate-950 overflow-hidden">
-          <Canvas 
-            shapes={shapes}
-            activeTool={activeTool} 
-            onUpdateShape={handleUpdateShape}
-            onUpdateShapes={handleUpdateShapes}
-            onSelectShape={handleSelectShape}
-            onMultiSelect={handleMultiSelect}
-            selectedIds={selectedIds}
-            onDeleteShapes={handleDeleteShapes}
-            showDimensions={showDimensions}
-          />
+        <div className="flex-1 flex flex-col relative bg-slate-950 overflow-hidden">
+             
+             {/* Mobile Toggle for Left Sidebar (visible only on small screens) */}
+             {!isLeftPanelOpen && (
+                 <button 
+                   onClick={() => setIsLeftPanelOpen(true)}
+                   className="md:hidden absolute top-4 left-4 z-40 bg-slate-800 p-2 rounded text-slate-200 shadow-lg"
+                 >
+                   <Menu size={20} />
+                 </button>
+             )}
+
+            <Canvas 
+                shapes={shapes}
+                activeTool={activeTool} 
+                onUpdateShape={handleUpdateShape}
+                onUpdateShapes={handleUpdateShapes}
+                onSelectShape={handleSelectShape}
+                onMultiSelect={handleMultiSelect}
+                selectedIds={selectedIds}
+                onDeleteShapes={handleDeleteShapes}
+                showDimensions={showDimensions}
+            />
         </div>
 
-        <div className="h-1/3 md:h-full w-full md:w-[400px] flex flex-col bg-slate-800 shrink-0 shadow-2xl z-20">
+        {/* Toggle Right Button */}
+        <button 
+             onClick={() => setIsRightPanelOpen(!isRightPanelOpen)}
+             className="hidden md:flex absolute right-0 top-1/2 -translate-y-1/2 z-30 bg-slate-800 text-slate-400 p-1 rounded-l border-y border-l border-slate-700 hover:text-white hover:bg-slate-700 items-center justify-center transition-all"
+             style={{ right: isRightPanelOpen ? '400px' : '0' }}
+        >
+             {isRightPanelOpen ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+        </button>
+
+        {/* Right Sidebar */}
+        <div className={`${isRightPanelOpen ? 'w-full md:w-[400px]' : 'w-0'} transition-all duration-300 flex flex-col bg-slate-800 shrink-0 shadow-2xl z-20 border-l border-slate-700 overflow-hidden`}>
           <div className="h-1/2 border-b border-slate-700 overflow-y-auto custom-scrollbar">
             <PropertiesPanel 
                 selectedShapes={selectedShapes} 
@@ -196,12 +240,7 @@ const App: React.FC = () => {
         </div>
       </main>
 
-      {/* <AIAssistant 
-        isOpen={isAIModalOpen} 
-        onClose={() => setIsAIModalOpen(false)} 
-        onSubmit={handleAISubmit}
-        isLoading={isAILoading}
-      /> */}
+      
     </div>
   );
 };

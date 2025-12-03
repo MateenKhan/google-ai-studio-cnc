@@ -1,7 +1,16 @@
 import { Shape, ShapeType, MachineSettings } from '../types';
+// import opentype from 'opentype.js';
 
-// A minimal "Stick Font" definition (0-1 normalized coordinates)
-// Format: List of paths. Each path is a list of points.
+// Cache for loaded fonts
+const fontCache: Record<string, opentype.Font> = {};
+
+// Font URLs - Using GitHub Raw for reliable TTF access
+const FONTS: Record<string, string> = {
+  'Great Vibes': 'https://raw.githubusercontent.com/google/fonts/main/ofl/greatvibes/GreatVibes-Regular.ttf',
+  'Roboto Mono': 'https://raw.githubusercontent.com/google/fonts/main/apache/robotomono/static/RobotoMono-Regular.ttf'
+};
+
+// Stick Font fallback
 const SIMPLE_FONT: Record<string, number[][][]> = {
   'A': [[[0,0], [0.5,1], [1,0]], [[0.2,0.4], [0.8,0.4]]],
   'B': [[[0,0], [0,1], [0.8,1], [0.8,0.5], [0,0.5], [0.8,0.5], [0.8,0], [0,0]]],
@@ -29,7 +38,7 @@ const SIMPLE_FONT: Record<string, number[][][]> = {
   'X': [[[0,0], [1,1]], [[0,1], [1,0]]],
   'Y': [[[0,1], [0.5,0.5]], [[1,1], [0.5,0.5]], [[0.5,0.5], [0.5,0]]],
   'Z': [[[0,1], [1,1], [0,0], [1,0]]],
-  '0': [[[0.5,0], [0,0.5], [0.5,1], [1,0.5], [0.5,0]], [[0,0], [1,1]]], // Slashed zero
+  '0': [[[0.5,0], [0,0.5], [0.5,1], [1,0.5], [0.5,0]], [[0,0], [1,1]]],
   '1': [[[0,0.8], [0.5,1], [0.5,0]], [[0,0], [1,0]]],
   '2': [[[0,0.8], [0.5,1], [1,0.8], [0,0], [1,0]]],
   '3': [[[0,0.8], [0.5,1], [1,0.8], [0.5,0.5]], [[0.5,0.5], [1,0.2], [0.5,0], [0,0.2]]],
@@ -42,7 +51,30 @@ const SIMPLE_FONT: Record<string, number[][][]> = {
   ' ': []
 };
 
-export const generateGCode = (shapes: Shape[], settings: MachineSettings): string => {
+async function loadFont(fontFamily: string): Promise<opentype.Font | null> {
+    const key = Object.keys(FONTS).find(k => fontFamily.includes(k.split(' ')[0]));
+    if (!key) return null;
+    
+    const url = FONTS[key];
+    if (fontCache[url]) return fontCache[url];
+
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            console.warn(`Failed to fetch font ${fontFamily}: ${response.statusText}`);
+            return null;
+        }
+        const buffer = await response.arrayBuffer();
+        const font = opentype.parse(buffer);
+        fontCache[url] = font;
+        return font;
+    } catch (err) {
+        console.warn(`Error loading font ${fontFamily}:`, err);
+        return null;
+    }
+}
+
+export const generateGCode = async (shapes: Shape[], settings: MachineSettings): Promise<string> => {
   const { feedRate, safeHeight, cutDepth } = settings;
   const lines: string[] = [];
 
@@ -52,89 +84,140 @@ export const generateGCode = (shapes: Shape[], settings: MachineSettings): strin
   lines.push('G90 ; Absolute positioning');
   lines.push(`G0 Z${safeHeight} ; Move to safe height`);
   lines.push('M3 S1000 ; Spindle on');
+  lines.push('');
 
-  shapes.forEach((shape) => {
+  for (const shape of shapes) {
     lines.push(`; Shape: ${shape.type} (ID: ${shape.id})`);
     
     switch (shape.type) {
       case ShapeType.RECTANGLE:
-        // Move to start corner
-        lines.push(`G0 X${shape.x} Y${shape.y}`);
-        // Plunge
+        lines.push(`G0 X${shape.x.toFixed(3)} Y${shape.y.toFixed(3)}`);
         lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
-        // Cut rectangle
-        lines.push(`G1 X${shape.x + shape.width} Y${shape.y} F${feedRate}`);
-        lines.push(`G1 X${shape.x + shape.width} Y${shape.y + shape.height}`);
-        lines.push(`G1 X${shape.x} Y${shape.y + shape.height}`);
-        lines.push(`G1 X${shape.x} Y${shape.y}`);
-        // Retract
+        lines.push(`G1 X${(shape.x + shape.width).toFixed(3)} Y${shape.y.toFixed(3)} F${feedRate}`);
+        lines.push(`G1 X${(shape.x + shape.width).toFixed(3)} Y${(shape.y + shape.height).toFixed(3)}`);
+        lines.push(`G1 X${shape.x.toFixed(3)} Y${(shape.y + shape.height).toFixed(3)}`);
+        lines.push(`G1 X${shape.x.toFixed(3)} Y${shape.y.toFixed(3)}`);
         lines.push(`G0 Z${safeHeight}`);
         break;
 
       case ShapeType.CIRCLE:
-        // Move to start point (rightmost point of circle)
-        lines.push(`G0 X${shape.x + shape.radius} Y${shape.y}`);
-        // Plunge
+        lines.push(`G0 X${(shape.x + shape.radius).toFixed(3)} Y${shape.y.toFixed(3)}`);
         lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
-        // Cut circle (Clockwise)
-        // I and J are relative offsets to the center from current position
-        // Current: (x+r, y). Center: (x, y). Offset: (-r, 0)
-        lines.push(`G2 X${shape.x + shape.radius} Y${shape.y} I-${shape.radius} J0 F${feedRate}`);
-        // Retract
+        lines.push(`G2 X${(shape.x + shape.radius).toFixed(3)} Y${shape.y.toFixed(3)} I-${shape.radius.toFixed(3)} J0 F${feedRate}`);
         lines.push(`G0 Z${safeHeight}`);
         break;
 
       case ShapeType.TEXT:
         lines.push(`; Text: "${shape.text}"`);
-        // Note: This stick font generator doesn't currently support custom fonts like "Great Vibes".
-        // It uses the standard stick font definition for toolpath generation.
-        // However, we apply letter spacing and size.
-        
-        let currentX = shape.x;
-        const letterSpacing = shape.letterSpacing || 0;
-        const charSpacing = (shape.fontSize * 0.1) + letterSpacing;
-        const charWidth = shape.fontSize * 0.6; // approx width for stick font
-        
-        for (const char of shape.text.toUpperCase()) {
-            const paths = SIMPLE_FONT[char] || SIMPLE_FONT['?'] || [];
-            
-            if (paths.length === 0 && char !== ' ') {
-                // Unknown char box
-                lines.push(`; Unknown char: ${char}`);
-                lines.push(`G0 X${currentX} Y${shape.y}`);
-                lines.push(`G1 Z${-cutDepth}`);
-                lines.push(`G1 X${currentX + charWidth} Y${shape.y}`);
-                lines.push(`G1 X${currentX + charWidth} Y${shape.y + shape.fontSize}`);
-                lines.push(`G1 X${currentX} Y${shape.y + shape.fontSize}`);
-                lines.push(`G1 X${currentX} Y${shape.y}`);
-                lines.push(`G0 Z${safeHeight}`);
-            } else if (char === ' ') {
-                // Just move
-            } else {
-                paths.forEach(path => {
-                   if (path.length === 0) return;
-                   
-                   // Move to first point
-                   const startX = currentX + (path[0][0] * charWidth);
-                   const startY = shape.y + (path[0][1] * shape.fontSize);
+        const fontToUse = shape.fontFamily && Object.keys(FONTS).some(f => shape.fontFamily!.includes(f)) 
+            ? await loadFont(shape.fontFamily) 
+            : null;
 
-                   lines.push(`G0 X${startX.toFixed(3)} Y${startY.toFixed(3)}`);
-                   lines.push(`G1 Z${-cutDepth}`);
-                   
-                   for (let i = 1; i < path.length; i++) {
-                       const px = currentX + (path[i][0] * charWidth);
-                       const py = shape.y + (path[i][1] * shape.fontSize);
-                       lines.push(`G1 X${px.toFixed(3)} Y${py.toFixed(3)}`);
-                   }
-                   lines.push(`G0 Z${safeHeight}`);
-                });
+        if (fontToUse) {
+            // High Quality Vector Path Generation
+            const path = fontToUse.getPath(shape.text, shape.x, shape.y, shape.fontSize);
+            // Convert Bezier curves to linear G-code segments
+            // We can simple iterate commands
+            let lastX = 0, lastY = 0;
+            
+            for (const cmd of path.commands) {
+                switch (cmd.type) {
+                    case 'M': // Move to
+                        lines.push(`G0 Z${safeHeight}`);
+                        lines.push(`G0 X${cmd.x.toFixed(3)} Y${cmd.y.toFixed(3)}`);
+                        lines.push(`G1 Z${-cutDepth} F${feedRate/2}`);
+                        lastX = cmd.x;
+                        lastY = cmd.y;
+                        break;
+                    case 'L': // Line to
+                        lines.push(`G1 X${cmd.x.toFixed(3)} Y${cmd.y.toFixed(3)} F${feedRate}`);
+                        lastX = cmd.x;
+                        lastY = cmd.y;
+                        break;
+                    case 'C': // Cubic Bezier
+                    case 'Q': // Quadratic Bezier
+                        // Crude approximation: just go to end point for now, or use a library helper to flatten.
+                        // OpenType.js doesn't natively "flatten" nicely to lines in commands list, but we can sample.
+                        // For simplicity in this environment, we treat as LineTo the end point to ensure connectivity,
+                        // or better: subdivide.
+                        // Let's implement a basic subdivision for 'Q' and 'C'.
+                        const steps = 5;
+                        for(let i=1; i<=steps; i++) {
+                             const t = i/steps;
+                             let x, y;
+                             if (cmd.type === 'Q') {
+                                 x = (1-t)*(1-t)*lastX + 2*(1-t)*t*cmd.x1 + t*t*cmd.x;
+                                 y = (1-t)*(1-t)*lastY + 2*(1-t)*t*cmd.y1 + t*t*cmd.y;
+                             } else { // C
+                                 x = Math.pow(1-t,3)*lastX + 3*Math.pow(1-t,2)*t*cmd.x1 + 3*(1-t)*Math.pow(t,2)*cmd.x2 + Math.pow(t,3)*cmd.x;
+                                 y = Math.pow(1-t,3)*lastY + 3*Math.pow(1-t,2)*t*cmd.y1 + 3*(1-t)*Math.pow(t,2)*cmd.y2 + Math.pow(t,3)*cmd.y;
+                             }
+                             lines.push(`G1 X${x.toFixed(3)} Y${y.toFixed(3)} F${feedRate}`);
+                        }
+                        lastX = cmd.x;
+                        lastY = cmd.y;
+                        break;
+                    case 'Z': // Close path
+                        // Usually implies connecting back to start of subpath, which usually happens in Font rendering
+                        break;
+                }
             }
-            currentX += charWidth + charSpacing;
+            lines.push(`G0 Z${safeHeight}`);
+        } else {
+            // Stick Font Generation
+            let currentX = shape.x;
+            const letterSpacing = shape.letterSpacing || 0;
+            const charSpacing = (shape.fontSize * 0.1) + letterSpacing;
+            const charWidth = shape.fontSize * 0.6; 
+            
+            for (const char of shape.text.toUpperCase()) {
+                const paths = SIMPLE_FONT[char] || SIMPLE_FONT['?'] || [];
+                
+                if (paths.length === 0 && char !== ' ') {
+                    // Unknown char box
+                    lines.push(`; Unknown char: ${char}`);
+                    lines.push(`G0 X${currentX.toFixed(3)} Y${shape.y.toFixed(3)}`);
+                    lines.push(`G1 Z${-cutDepth}`);
+                    lines.push(`G1 X${(currentX + charWidth).toFixed(3)} Y${shape.y.toFixed(3)}`);
+                    lines.push(`G1 X${(currentX + charWidth).toFixed(3)} Y${(shape.y + shape.fontSize).toFixed(3)}`);
+                    lines.push(`G1 X${currentX.toFixed(3)} Y${(shape.y + shape.fontSize).toFixed(3)}`);
+                    lines.push(`G1 X${currentX.toFixed(3)} Y${shape.y.toFixed(3)}`);
+                    lines.push(`G0 Z${safeHeight}`);
+                } else if (char === ' ') {
+                    // Just move
+                } else {
+                    paths.forEach(path => {
+                       if (path.length === 0) return;
+                       
+                       // Move to first point
+                       // Stick font coordinates are 0-1 normalized, scaled by charWidth/Height
+                       // Note: SVG text draws from Bottom-Left usually? No, SVG Text is baseline.
+                       // Our stick font 0,0 is bottom-left relative.
+                       const startX = currentX + (path[0][0] * charWidth);
+                       const startY = shape.y - (path[0][1] * shape.fontSize); // Invert Y for CNC usually, but let's keep consistency with canvas
+
+                       // Canvas Text (s.x, s.y) is bottom-left baseline usually in simple rendering? 
+                       // Actually in <text> y is baseline. 
+                       // Let's assume the Stick Font is Y-up (0 is bottom, 1 is top).
+                       // So if shape.y is baseline, we subtract to go up.
+                       
+                       lines.push(`G0 X${startX.toFixed(3)} Y${startY.toFixed(3)}`);
+                       lines.push(`G1 Z${-cutDepth}`);
+                       
+                       for (let i = 1; i < path.length; i++) {
+                           const px = currentX + (path[i][0] * charWidth);
+                           const py = shape.y - (path[i][1] * shape.fontSize);
+                           lines.push(`G1 X${px.toFixed(3)} Y${py.toFixed(3)}`);
+                       }
+                       lines.push(`G0 Z${safeHeight}`);
+                    });
+                }
+                currentX += charWidth + charSpacing;
+            }
         }
-        break;
     }
     lines.push('');
-  });
+  }
 
   // Footer
   lines.push('M5 ; Spindle off');
