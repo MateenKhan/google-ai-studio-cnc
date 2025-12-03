@@ -90,9 +90,6 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedShapes, onUpd
             <input 
               type="number" 
               value={(selectedShapes[0] as RectangleShape).width} // Assuming mixed checks handle rendering or logic
-              // Actually for specific props we also need mixed check if we want to support it, 
-              // but simplest is just check if same. 
-              // If values differ, we can do the same mixed logic.
               placeholder={selectedShapes.every(s => (s as RectangleShape).width === (selectedShapes[0] as RectangleShape).width) ? '' : 'Mixed'}
               onChange={(e) => {
                   const val = Number(e.target.value);
@@ -152,19 +149,53 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedShapes, onUpd
               className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none placeholder-slate-600 italic"
             />
           </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-400">Font Size</label>
+                <input 
+                type="number" 
+                value={(selectedShapes[0] as TextShape).fontSize} 
+                placeholder={selectedShapes.every(s => (s as TextShape).fontSize === (selectedShapes[0] as TextShape).fontSize) ? '' : 'Mixed'}
+                onChange={(e) => {
+                    const val = Number(e.target.value);
+                    const updates = selectedShapes.map(s => ({ ...s, fontSize: val } as TextShape));
+                    onUpdateShapes(updates);
+                }}
+                className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none placeholder-slate-600 italic"
+                />
+            </div>
+            <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-400">Spacing</label>
+                <input 
+                type="number" 
+                step="0.1"
+                value={(selectedShapes[0] as TextShape).letterSpacing || 0} 
+                placeholder={selectedShapes.every(s => (s as TextShape).letterSpacing === (selectedShapes[0] as TextShape).letterSpacing) ? '' : 'Mixed'}
+                onChange={(e) => {
+                    const val = Number(e.target.value);
+                    const updates = selectedShapes.map(s => ({ ...s, letterSpacing: val } as TextShape));
+                    onUpdateShapes(updates);
+                }}
+                className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none placeholder-slate-600 italic"
+                />
+            </div>
+          </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-slate-400">Font Size</label>
-            <input 
-              type="number" 
-              value={(selectedShapes[0] as TextShape).fontSize} 
-              placeholder={selectedShapes.every(s => (s as TextShape).fontSize === (selectedShapes[0] as TextShape).fontSize) ? '' : 'Mixed'}
-              onChange={(e) => {
-                  const val = Number(e.target.value);
-                  const updates = selectedShapes.map(s => ({ ...s, fontSize: val } as TextShape));
-                  onUpdateShapes(updates);
-              }}
-              className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none placeholder-slate-600 italic"
-            />
+             <label className="text-xs text-slate-400">Font Family</label>
+             <select 
+                value={(selectedShapes[0] as TextShape).fontFamily || 'monospace'}
+                onChange={(e) => {
+                    const val = e.target.value;
+                    const updates = selectedShapes.map(s => ({ ...s, fontFamily: val } as TextShape));
+                    onUpdateShapes(updates);
+                }}
+                className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
+             >
+                 <option value="monospace">Standard Mono</option>
+                 <option value="sans-serif">Sans Serif</option>
+                 <option value="'Great Vibes', cursive">Signatara Style (Great Vibes)</option>
+                 <option value="'Roboto Mono', monospace">Roboto Mono</option>
+             </select>
           </div>
         </>
       )}

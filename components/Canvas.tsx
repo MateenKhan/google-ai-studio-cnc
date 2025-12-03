@@ -11,6 +11,7 @@ interface CanvasProps {
   onMultiSelect: (ids: string[], addToExisting: boolean) => void;
   selectedIds: string[];
   onDeleteShapes: (ids: string[]) => void;
+  showDimensions: boolean;
 }
 
 const Canvas: React.FC<CanvasProps> = ({ 
@@ -21,7 +22,8 @@ const Canvas: React.FC<CanvasProps> = ({
     onSelectShape, 
     onMultiSelect,
     selectedIds, 
-    onDeleteShapes 
+    onDeleteShapes,
+    showDimensions
 }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -230,6 +232,39 @@ const Canvas: React.FC<CanvasProps> = ({
     }
   };
 
+  // Helper for Dimension Lines
+  const renderDimensions = (shape: Shape) => {
+      const color = "#facc15"; // Yellow
+      const strokeWidth = 1;
+      const textStyle = { fill: color, fontSize: 10, fontFamily: "sans-serif" };
+
+      if (shape.type === ShapeType.RECTANGLE) {
+          const s = shape as RectangleShape;
+          return (
+              <g pointerEvents="none" opacity="0.8">
+                  {/* Width Dimension */}
+                  <line x1={s.x} y1={s.y - 10} x2={s.x + s.width} y2={s.y - 10} stroke={color} strokeWidth={strokeWidth} markerEnd="url(#arrow)" markerStart="url(#arrow-start)" />
+                  <text x={s.x + s.width / 2} y={s.y - 15} textAnchor="middle" {...textStyle}>{s.width}mm</text>
+                  
+                  {/* Height Dimension */}
+                  <line x1={s.x - 10} y1={s.y} x2={s.x - 10} y2={s.y + s.height} stroke={color} strokeWidth={strokeWidth} />
+                  <text x={s.x - 15} y={s.y + s.height / 2} textAnchor="end" alignmentBaseline="middle" {...textStyle}>{s.height}mm</text>
+              </g>
+          );
+      }
+      if (shape.type === ShapeType.CIRCLE) {
+          const s = shape as CircleShape;
+           return (
+              <g pointerEvents="none" opacity="0.8">
+                  {/* Radius Dimension */}
+                  <line x1={s.x} y1={s.y} x2={s.x + s.radius} y2={s.y} stroke={color} strokeWidth={strokeWidth} />
+                  <text x={s.x + s.radius / 2} y={s.y - 5} textAnchor="middle" {...textStyle}>R{s.radius}</text>
+              </g>
+          );
+      }
+      return null;
+  };
+
   // ViewBox Calculation
   // Base: -20 -20 540 540
   // Pan moves the viewport. So ViewBox X = BaseX - PanX
@@ -253,6 +288,13 @@ const Canvas: React.FC<CanvasProps> = ({
           <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
             <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#334155" strokeWidth="0.5" />
           </pattern>
+          {/* Arrow markers for dimensions */}
+          <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L6,3 z" fill="#facc15" />
+          </marker>
+          <marker id="arrow-start" markerWidth="6" markerHeight="6" refX="1" refY="3" orient="auto-start-reverse">
+             <path d="M0,0 L0,6 L6,3 z" fill="#facc15" />
+          </marker>
         </defs>
         
         {/* Background Grid */}
@@ -313,7 +355,8 @@ const Canvas: React.FC<CanvasProps> = ({
                 x={s.x} y={s.y}
                 fill={stroke}
                 fontSize={s.fontSize}
-                fontFamily="monospace"
+                fontFamily={s.fontFamily || "monospace"}
+                letterSpacing={s.letterSpacing || 0}
                 fontWeight={isSelected ? "bold" : "normal"}
                 {...commonProps}
                 className={`${commonProps.className} select-none`}
@@ -324,6 +367,13 @@ const Canvas: React.FC<CanvasProps> = ({
            }
            return null;
         })}
+
+        {/* Dimensions Layer - Rendered on top */}
+        {showDimensions && shapes.map(shape => (
+             <React.Fragment key={`dim-${shape.id}`}>
+                 {renderDimensions(shape)}
+             </React.Fragment>
+        ))}
 
         {/* Marquee Selection Box */}
         {marquee && (

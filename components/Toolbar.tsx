@@ -1,5 +1,5 @@
 import React from 'react';
-import { Square, Circle, Type, Wand2, MousePointer2, Hand } from 'lucide-react';
+import { Square, Circle, Type, Wand2, MousePointer2, Hand, Ruler } from 'lucide-react';
 import { ShapeType, Tool } from '../types';
 
 interface ToolbarProps {
@@ -7,9 +7,18 @@ interface ToolbarProps {
   onSelectTool: (tool: Tool) => void;
   onAddShape: (type: ShapeType) => void;
   onOpenAI: () => void;
+  showDimensions: boolean;
+  onToggleDimensions: () => void;
 }
 
-const Toolbar: React.FC<ToolbarProps> = ({ activeTool, onSelectTool, onAddShape, onOpenAI }) => {
+const Toolbar: React.FC<ToolbarProps> = ({ 
+    activeTool, 
+    onSelectTool, 
+    onAddShape, 
+    onOpenAI,
+    showDimensions,
+    onToggleDimensions
+}) => {
   return (
     <div className="bg-slate-800 border-r-0 border-b md:border-b-0 md:border-r border-slate-700 flex flex-row md:flex-col items-center justify-between md:justify-start p-2 md:py-4 gap-2 md:gap-4 z-10 w-full md:w-16 h-16 md:h-full order-last md:order-first shrink-0">
       <div className="hidden md:block mb-4">
@@ -48,6 +57,21 @@ const Toolbar: React.FC<ToolbarProps> = ({ activeTool, onSelectTool, onAddShape,
                 <Hand size={20} />
                 <span className="hidden md:block absolute left-14 bg-slate-900 text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap border border-slate-700 pointer-events-none z-50">
                 Move View
+                </span>
+            </button>
+
+             <button 
+                onClick={onToggleDimensions}
+                className={`p-3 rounded-xl transition-all group relative ${
+                    showDimensions
+                    ? 'bg-sky-600 text-white shadow-lg shadow-sky-900/30' 
+                    : 'bg-slate-700/50 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
+                }`}
+                title="Toggle Dimensions"
+            >
+                <Ruler size={20} />
+                <span className="hidden md:block absolute left-14 bg-slate-900 text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap border border-slate-700 pointer-events-none z-50">
+                  {showDimensions ? 'Hide Dimensions' : 'Show Dimensions'}
                 </span>
             </button>
         </div>

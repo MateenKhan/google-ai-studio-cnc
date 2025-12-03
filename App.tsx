@@ -24,6 +24,7 @@ const App: React.FC = () => {
   const [isManualMode, setIsManualMode] = useState(false);
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [isAILoading, setIsAILoading] = useState(false);
+  const [showDimensions, setShowDimensions] = useState(false);
 
   // Auto-generate G-code when shapes change, unless in manual mode
   useEffect(() => {
@@ -45,7 +46,7 @@ const App: React.FC = () => {
         newShape = { id, type, x: 100, y: 100, radius: 25 };
         break;
       case ShapeType.TEXT:
-        newShape = { id, type, x: 50, y: 150, text: "CNC", fontSize: 24 };
+        newShape = { id, type, x: 50, y: 150, text: "CNC", fontSize: 24, fontFamily: 'monospace', letterSpacing: 0 };
         break;
       default:
         return;
@@ -147,7 +148,9 @@ const App: React.FC = () => {
         activeTool={activeTool}
         onSelectTool={setActiveTool}
         onAddShape={handleAddShape} 
-        onOpenAI={() => setIsAIModalOpen(true)} 
+        onOpenAI={() => setIsAIModalOpen(true)}
+        showDimensions={showDimensions}
+        onToggleDimensions={() => setShowDimensions(!showDimensions)}
       />
       
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
@@ -161,6 +164,7 @@ const App: React.FC = () => {
             onMultiSelect={handleMultiSelect}
             selectedIds={selectedIds}
             onDeleteShapes={handleDeleteShapes}
+            showDimensions={showDimensions}
           />
         </div>
 

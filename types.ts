@@ -31,6 +31,8 @@ export interface TextShape extends BaseShape {
   type: ShapeType.TEXT;
   text: string;
   fontSize: number;
+  fontFamily?: string;
+  letterSpacing?: number;
 }
 
 export type Shape = RectangleShape | CircleShape | TextShape;

@@ -86,9 +86,14 @@ export const generateGCode = (shapes: Shape[], settings: MachineSettings): strin
 
       case ShapeType.TEXT:
         lines.push(`; Text: "${shape.text}"`);
+        // Note: This stick font generator doesn't currently support custom fonts like "Great Vibes".
+        // It uses the standard stick font definition for toolpath generation.
+        // However, we apply letter spacing and size.
+        
         let currentX = shape.x;
-        const charSpacing = shape.fontSize * 0.1;
-        const charWidth = shape.fontSize * 0.6; // approx width
+        const letterSpacing = shape.letterSpacing || 0;
+        const charSpacing = (shape.fontSize * 0.1) + letterSpacing;
+        const charWidth = shape.fontSize * 0.6; // approx width for stick font
         
         for (const char of shape.text.toUpperCase()) {
             const paths = SIMPLE_FONT[char] || SIMPLE_FONT['?'] || [];
@@ -111,10 +116,6 @@ export const generateGCode = (shapes: Shape[], settings: MachineSettings): strin
                    
                    // Move to first point
                    const startX = currentX + (path[0][0] * charWidth);
-                   // In SVG/Canvas text grows down, but in CNC usually Y+ is up.
-                   // Let's assume user expects standard math coordinates where Y+ is Up.
-                   // But font definitions are usually 0,0 at bottom-left for fonts.
-                   // Our definitions above: 0,0 bottom-left, 1,1 top-right.
                    const startY = shape.y + (path[0][1] * shape.fontSize);
 
                    lines.push(`G0 X${startX.toFixed(3)} Y${startY.toFixed(3)}`);
