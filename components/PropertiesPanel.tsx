@@ -1,7 +1,8 @@
 import React from 'react';
-import { Shape, ShapeType, RectangleShape, CircleShape, TextShape, HeartShape, LineShape, Unit } from '../types';
-import { Layers, Trash2, X } from 'lucide-react';
+import { Shape, ShapeType, RectangleShape, CircleShape, TextShape, HeartShape, LineShape, Unit, MirrorMode } from '../types';
+import { Layers, Trash2, X, Settings, Calculator, LayoutGrid, Type } from 'lucide-react';
 import { fromMm, toMm } from '../utils';
+import { AVAILABLE_FONTS } from '../services/gcodeService';
 
 interface PropertiesPanelProps {
   selectedShapes: Shape[];
@@ -10,28 +11,113 @@ interface PropertiesPanelProps {
   onDelete: (ids: string[]) => void;
   onClose: () => void;
   unit: Unit;
+  onOpenMachineControl?: () => void;
+  onOpenCalibration?: () => void;
+  canvasWidth?: number;
+  canvasHeight?: number;
+  onUpdateCanvasSize?: (w: number, h: number) => void;
+  gridSize?: number;
+  onUpdateGridSize?: (size: number) => void;
 }
 
-const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedShapes, onUpdateShape, onUpdateShapes, onDelete, onClose, unit }) => {
+const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ 
+    selectedShapes, 
+    onUpdateShape, 
+    onUpdateShapes, 
+    onDelete, 
+    onClose, 
+    unit,
+    onOpenMachineControl,
+    onOpenCalibration,
+    canvasWidth = 3050,
+    canvasHeight = 2150,
+    onUpdateCanvasSize,
+    gridSize = 10,
+    onUpdateGridSize
+}) => {
   if (selectedShapes.length === 0) {
+    const handleCanvasChange = (dim: 'w' | 'h', valStr: string) => {
+        const val = parseFloat(valStr);
+        if (isNaN(val) || !onUpdateCanvasSize) return;
+        const mmVal = toMm(val, unit);
+        if (dim === 'w') onUpdateCanvasSize(mmVal, canvasHeight);
+        else onUpdateCanvasSize(canvasWidth, mmVal);
+    };
+
     return (
       <div className="p-4 flex flex-col h-full relative">
          <button onClick={onClose} className="md:hidden absolute top-0 right-0 p-2 text-slate-400 hover:text-white">
             <X size={20} />
          </button>
-        <div className="flex-1 flex flex-col items-center justify-center text-slate-600 text-center p-8">
-            <Layers size={48} className="mb-4 opacity-50" />
-            <p className="text-sm">Select a shape to edit properties.</p>
-            <p className="text-xs mt-2 text-slate-700">Hold Shift or use "Multi-Select" to select multiple items.</p>
+        <div className="flex-1 flex flex-col items-center justify-center text-slate-600 text-center p-8 space-y-6">
+            <div className="flex flex-col items-center">
+                <Layers size={48} className="mb-4 opacity-50" />
+                <p className="text-sm">Select a shape to edit properties.</p>
+            </div>
+            
+            {/* Canvas Settings */}
+            <div className="bg-slate-900 p-4 rounded-xl border border-slate-700 w-full max-w-[240px]">
+                <div className="flex items-center gap-2 mb-3 text-slate-300 font-semibold border-b border-slate-700 pb-2">
+                    <LayoutGrid size={16} /> Canvas Size ({unit})
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                    <div className="flex flex-col gap-1 text-left">
+                        <label className="text-xs text-slate-500">Width</label>
+                        <input 
+                            type="number" 
+                            value={parseFloat(fromMm(canvasWidth, unit).toFixed(2))}
+                            onChange={(e) => handleCanvasChange('w', e.target.value)}
+                            className="bg-slate-950 border border-slate-600 rounded p-1.5 text-sm text-slate-200 focus:border-sky-500 outline-none w-full"
+                        />
+                    </div>
+                    <div className="flex flex-col gap-1 text-left">
+                        <label className="text-xs text-slate-500">Height</label>
+                        <input 
+                            type="number" 
+                            value={parseFloat(fromMm(canvasHeight, unit).toFixed(2))}
+                            onChange={(e) => handleCanvasChange('h', e.target.value)}
+                            className="bg-slate-950 border border-slate-600 rounded p-1.5 text-sm text-slate-200 focus:border-sky-500 outline-none w-full"
+                        />
+                    </div>
+                </div>
+                {onUpdateGridSize && (
+                     <div className="mt-2 flex flex-col gap-1 text-left">
+                        <label className="text-xs text-slate-500">Grid Size (mm)</label>
+                        <input 
+                            type="number" 
+                            value={gridSize}
+                            onChange={(e) => onUpdateGridSize(parseFloat(e.target.value) || 10)}
+                            className="bg-slate-950 border border-slate-600 rounded p-1.5 text-sm text-slate-200 focus:border-sky-500 outline-none w-full"
+                        />
+                    </div>
+                )}
+            </div>
+
+            <div className="mt-4 flex flex-col gap-2 w-full max-w-[240px]">
+                {onOpenMachineControl && (
+                    <button onClick={onOpenMachineControl} className="btn-secondary py-2 px-4 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center gap-2 border border-slate-700 transition-colors">
+                        <Settings size={16} /> Machine Control
+                    </button>
+                )}
+                {onOpenCalibration && (
+                    <button onClick={onOpenCalibration} className="btn-secondary py-2 px-4 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center gap-2 border border-slate-700 transition-colors">
+                        <Calculator size={16} /> Steps Calibrator
+                    </button>
+                )}
+            </div>
         </div>
       </div>
     );
   }
 
-  // Unit Converters
-  const displayVal = (val: number | undefined) => {
-    if (val === undefined) return '';
-    return parseFloat(fromMm(val, unit).toFixed(3));
+  // Helper to safely get value formatted in current unit
+  const getValue = (shape: Shape, key: string) => {
+      // @ts-ignore
+      const val = shape[key];
+      if (typeof val === 'number') {
+          return parseFloat(fromMm(val, unit).toFixed(3));
+      }
+      return val;
   };
 
   const handleValChange = (field: string, valStr: string) => {
@@ -46,27 +132,15 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedShapes, onUpd
     onUpdateShapes(updates);
   };
 
-  // Helper to check if a property value is mixed among selected shapes
-  const getCommonValue = (field: string): number | '' => {
+  const getCommonValue = (field: string): number | string | '' => {
     if (selectedShapes.length === 0) return '';
-    const firstVal = (selectedShapes[0] as any)[field];
-    const allSame = selectedShapes.every(s => (s as any)[field] === firstVal);
-    // @ts-ignore
-    return allSame ? displayVal(firstVal) : '';
+    const firstVal = getValue(selectedShapes[0], field);
+    const allSame = selectedShapes.every(s => getValue(s, field) === firstVal);
+    return allSame ? firstVal : '';
   };
 
-  const getPlaceholder = (field: string) => {
-    if (selectedShapes.length === 0) return '';
-    const firstVal = (selectedShapes[0] as any)[field];
-    const allSame = selectedShapes.every(s => (s as any)[field] === firstVal);
-    return allSame ? '' : 'Mixed';
-  };
-
-  const isAllRectangles = selectedShapes.every(s => s.type === ShapeType.RECTANGLE);
-  const isAllCircles = selectedShapes.every(s => s.type === ShapeType.CIRCLE);
+  const hasType = (t: ShapeType) => selectedShapes.some(s => s.type === t);
   const isAllText = selectedShapes.every(s => s.type === ShapeType.TEXT);
-  const isAllHearts = selectedShapes.every(s => s.type === ShapeType.HEART);
-  const isAllLines = selectedShapes.every(s => s.type === ShapeType.LINE);
 
   return (
     <div className="p-4 flex flex-col gap-4 relative">
@@ -80,16 +154,15 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedShapes, onUpd
         )}
       </h3>
       
-      {/* Common Properties */}
+      {/* Position */}
       <div className="grid grid-cols-2 gap-2">
         <div className="flex flex-col gap-1">
           <label className="text-xs text-slate-400">X</label>
           <input 
             type="number" 
             value={getCommonValue('x')}
-            placeholder={getPlaceholder('x')} 
             onChange={(e) => handleValChange('x', e.target.value)}
-            className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none placeholder-slate-600 italic"
+            className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
           />
         </div>
         <div className="flex flex-col gap-1">
@@ -97,96 +170,84 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedShapes, onUpd
           <input 
             type="number" 
             value={getCommonValue('y')}
-            placeholder={getPlaceholder('y')}
             onChange={(e) => handleValChange('y', e.target.value)}
-            className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none placeholder-slate-600 italic"
+            className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
           />
         </div>
       </div>
 
-      {/* Specific Properties */}
-      {isAllRectangles && (
-        <div className="grid grid-cols-2 gap-2">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-slate-400">Width</label>
-            <input 
-              type="number" 
-              value={getCommonValue('width')}
-              placeholder={getPlaceholder('width')}
-              onChange={(e) => handleValChange('width', e.target.value)}
-              className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none placeholder-slate-600 italic"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-slate-400">Height</label>
-            <input 
-              type="number" 
-              value={getCommonValue('height')}
-              placeholder={getPlaceholder('height')}
-              onChange={(e) => handleValChange('height', e.target.value)}
-              className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none placeholder-slate-600 italic"
-            />
-          </div>
-        </div>
-      )}
-
-      {isAllCircles && (
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-slate-400">Radius</label>
-          <input 
-            type="number" 
-            value={getCommonValue('radius')} 
-            placeholder={getPlaceholder('radius')}
-            onChange={(e) => handleValChange('radius', e.target.value)}
-            className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none placeholder-slate-600 italic"
-          />
-        </div>
-      )}
-
-      {isAllHearts && (
-        <div className="grid grid-cols-2 gap-2">
+      {/* Dimensions for Rect/Heart/Text(Width) */}
+      {(hasType(ShapeType.RECTANGLE) || hasType(ShapeType.HEART)) && (
+          <div className="grid grid-cols-2 gap-2">
             <div className="flex flex-col gap-1">
-                <label className="text-xs text-slate-400">Width</label>
-                <input 
+              <label className="text-xs text-slate-400">Width</label>
+              <input 
                 type="number" 
                 value={getCommonValue('width')}
                 onChange={(e) => handleValChange('width', e.target.value)}
                 className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
-                />
+              />
             </div>
             <div className="flex flex-col gap-1">
-                <label className="text-xs text-slate-400">Height</label>
-                <input 
+              <label className="text-xs text-slate-400">Height</label>
+              <input 
                 type="number" 
                 value={getCommonValue('height')}
                 onChange={(e) => handleValChange('height', e.target.value)}
                 className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
-                />
+              />
             </div>
-        </div>
+          </div>
       )}
 
-      {isAllLines && (
-        <div className="grid grid-cols-2 gap-2">
+      {/* Rectangle Specific */}
+      {hasType(ShapeType.RECTANGLE) && (
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-slate-400">Corner Radius</label>
+            <input 
+                type="number" 
+                value={getCommonValue('cornerRadius')}
+                onChange={(e) => handleValChange('cornerRadius', e.target.value)}
+                className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
+            />
+          </div>
+      )}
+
+      {/* Circle Specific */}
+      {hasType(ShapeType.CIRCLE) && (
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-slate-400">Radius</label>
+            <input 
+                type="number" 
+                value={getCommonValue('radius')}
+                onChange={(e) => handleValChange('radius', e.target.value)}
+                className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
+            />
+          </div>
+      )}
+
+      {/* Line Specific */}
+      {hasType(ShapeType.LINE) && (
+          <div className="grid grid-cols-2 gap-2">
             <div className="flex flex-col gap-1">
-                <label className="text-xs text-slate-400">End X</label>
-                <input 
+              <label className="text-xs text-slate-400">End X (X2)</label>
+              <input 
                 type="number" 
                 value={getCommonValue('x2')}
                 onChange={(e) => handleValChange('x2', e.target.value)}
                 className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
-                />
+              />
             </div>
             <div className="flex flex-col gap-1">
-                <label className="text-xs text-slate-400">End Y</label>
-                <input 
+              <label className="text-xs text-slate-400">End Y (Y2)</label>
+              <input 
                 type="number" 
                 value={getCommonValue('y2')}
                 onChange={(e) => handleValChange('y2', e.target.value)}
                 className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
-                />
+              />
             </div>
-        </div>
+          </div>
       )}
 
       {isAllText && (
@@ -196,70 +257,63 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedShapes, onUpd
             <input 
               type="text" 
               value={(selectedShapes[0] as TextShape).text} 
-              placeholder={selectedShapes.every(s => (s as TextShape).text === (selectedShapes[0] as TextShape).text) ? '' : 'Mixed'}
               onChange={(e) => {
-                  const val = e.target.value;
-                  const updates = selectedShapes.map(s => ({ ...s, text: val } as TextShape));
+                  const updates = selectedShapes.map(s => ({ ...s, text: e.target.value } as TextShape));
                   onUpdateShapes(updates);
               }}
-              className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none placeholder-slate-600 italic"
+              className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
             />
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="flex flex-col gap-1">
-                <label className="text-xs text-slate-400">Font Size</label>
-                <input 
-                type="number" 
-                value={getCommonValue('fontSize')}
-                placeholder={getPlaceholder('fontSize')}
-                onChange={(e) => handleValChange('fontSize', e.target.value)}
-                className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none placeholder-slate-600 italic"
-                />
-            </div>
-            <div className="flex flex-col gap-1">
-                <label className="text-xs text-slate-400">Char Spacing</label>
-                <input 
-                type="number" 
-                step="0.1"
-                value={getCommonValue('letterSpacing')}
-                placeholder={getPlaceholder('letterSpacing')}
-                onChange={(e) => handleValChange('letterSpacing', e.target.value)}
-                className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none placeholder-slate-600 italic"
-                />
-            </div>
-          </div>
-          <div className="flex flex-col gap-1">
-             <label className="text-xs text-slate-400">Font Family</label>
+          
+           <div className="flex flex-col gap-1">
+             <label className="text-xs text-slate-400 flex items-center gap-1"><Type size={12}/> Font Family</label>
              <select 
-                value={(selectedShapes[0] as TextShape).fontFamily || 'monospace'}
+                value={(selectedShapes[0] as TextShape).fontFamily || 'Roboto Mono'}
                 onChange={(e) => {
-                    const val = e.target.value;
-                    const updates = selectedShapes.map(s => ({ ...s, fontFamily: val } as TextShape));
+                    const updates = selectedShapes.map(s => ({ ...s, fontFamily: e.target.value } as TextShape));
                     onUpdateShapes(updates);
                 }}
                 className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
              >
-                 <option value="monospace">Standard Mono</option>
-                 <option value="sans-serif">Sans Serif</option>
-                 <option value="'Great Vibes', cursive">Signatara Style (Great Vibes)</option>
-                 <option value="'Roboto Mono', monospace">Roboto Mono</option>
+                 {AVAILABLE_FONTS.map(f => <option key={f} value={f}>{f}</option>)}
              </select>
           </div>
-        </>
-      )}
 
-      {selectedShapes.length > 1 && !isAllRectangles && !isAllCircles && !isAllText && !isAllHearts && !isAllLines && (
-         <div className="text-xs text-slate-500 italic mt-2">
-            Selected items are different types. Only position (X, Y) can be edited in bulk.
-         </div>
+          <div className="grid grid-cols-2 gap-2">
+             <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-400">Font Size</label>
+                <input 
+                type="number" 
+                value={getCommonValue('fontSize')}
+                onChange={(e) => handleValChange('fontSize', e.target.value)}
+                className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
+                />
+            </div>
+             <div className="flex flex-col gap-1">
+             <label className="text-xs text-slate-400">Mirror Mode</label>
+             <select 
+                value={(selectedShapes[0] as TextShape).mirrorMode || MirrorMode.NONE}
+                onChange={(e) => {
+                    const val = e.target.value as MirrorMode;
+                    const updates = selectedShapes.map(s => ({ ...s, mirrorMode: val } as TextShape));
+                    onUpdateShapes(updates);
+                }}
+                className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
+             >
+                 <option value={MirrorMode.NONE}>None</option>
+                 <option value={MirrorMode.WHOLE}>Whole Text</option>
+                 <option value={MirrorMode.CHAR}>Char Level</option>
+             </select>
+          </div>
+          </div>
+        </>
       )}
 
        <button 
              onClick={() => onDelete(selectedShapes.map(s => s.id))}
              className="mt-4 py-2 bg-red-900/20 hover:bg-red-900/40 text-red-400 border border-red-900/30 rounded flex items-center justify-center gap-2 transition-colors"
            >
-             <Trash2 size={16} /> 
-             {selectedShapes.length > 1 ? `Delete ${selectedShapes.length} Items` : 'Delete Shape'}
+             <Trash2 size={16} /> Delete
        </button>
     </div>
   );

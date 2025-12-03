@@ -1,75 +1,39 @@
-import { Shape, ShapeType, MachineSettings, LineShape, PolylineShape, HeartShape } from '../types';
+import { Shape, ShapeType, MachineSettings, LineShape, PolylineShape, HeartShape, TextShape, MirrorMode, RectangleShape } from '../types';
 import opentype from 'opentype.js';
 
 // Cache for loaded fonts
 const fontCache: Record<string, opentype.Font> = {};
 
 // Font URLs - Using GitHub Raw for reliable TTF access
+// Must match the families imported in index.html
 const FONTS: Record<string, string> = {
+  'Roboto Mono': 'https://raw.githubusercontent.com/google/fonts/main/apache/robotomono/static/RobotoMono-Regular.ttf',
   'Great Vibes': 'https://raw.githubusercontent.com/google/fonts/main/ofl/greatvibes/GreatVibes-Regular.ttf',
-  'Roboto Mono': 'https://raw.githubusercontent.com/google/fonts/main/apache/robotomono/static/RobotoMono-Regular.ttf'
+  'Open Sans': 'https://raw.githubusercontent.com/google/fonts/main/ofl/opensans/OpenSans-Regular.ttf',
+  'Lato': 'https://raw.githubusercontent.com/google/fonts/main/ofl/lato/Lato-Regular.ttf',
+  'Montserrat': 'https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/Montserrat-Regular.ttf',
+  'Oswald': 'https://raw.githubusercontent.com/google/fonts/main/ofl/oswald/static/Oswald-Regular.ttf',
+  'Playfair Display': 'https://raw.githubusercontent.com/google/fonts/main/ofl/playfairdisplay/static/PlayfairDisplay-Regular.ttf'
 };
 
-// Stick Font fallback
-const SIMPLE_FONT: Record<string, number[][][]> = {
-  'A': [[[0,0], [0.5,1], [1,0]], [[0.2,0.4], [0.8,0.4]]],
-  'B': [[[0,0], [0,1], [0.8,1], [0.8,0.5], [0,0.5], [0.8,0.5], [0.8,0], [0,0]]],
-  'C': [[[1,0.2], [0.5,0], [0,0.5], [0.5,1], [1,0.8]]],
-  'D': [[[0,0], [0,1], [0.6,1], [1,0.5], [0.6,0], [0,0]]],
-  'E': [[[1,0], [0,0], [0,1], [1,1]], [[0,0.5], [0.8,0.5]]],
-  'F': [[[0,0], [0,1], [1,1]], [[0,0.5], [0.8,0.5]]],
-  'G': [[[1,0.8], [1,0.5], [0.5,0.5]], [[0.5,0.5], [1,0.2], [0.5,0], [0,0.5], [0.5,1], [1,0.8]]],
-  'H': [[[0,0], [0,1]], [[1,0], [1,1]], [[0,0.5], [1,0.5]]],
-  'I': [[[0.5,0], [0.5,1]], [[0,0], [1,0]], [[0,1], [1,1]]],
-  'J': [[[1,1], [1,0.2], [0.5,0], [0,0.2]]],
-  'K': [[[0,0], [0,1]], [[1,1], [0,0.5], [1,0]]],
-  'L': [[[0,1], [0,0], [1,0]]],
-  'M': [[[0,0], [0,1], [0.5,0.5], [1,1], [1,0]]],
-  'N': [[[0,0], [0,1], [1,0], [1,1]]],
-  'O': [[[0.5,0], [0,0.5], [0.5,1], [1,0.5], [0.5,0]]],
-  'P': [[[0,0], [0,1], [0.8,1], [0.8,0.5], [0,0.5]]],
-  'Q': [[[0.5,0], [0,0.5], [0.5,1], [1,0.5], [0.5,0]], [[0.7,0.3], [1,0]]],
-  'R': [[[0,0], [0,1], [0.8,1], [0.8,0.5], [0,0.5], [1,0]]],
-  'S': [[[1,0.8], [0.5,1], [0,0.8], [1,0.2], [0.5,0], [0,0.2]]],
-  'T': [[[0.5,0], [0.5,1]], [[0,1], [1,1]]],
-  'U': [[[0,1], [0,0.2], [0.5,0], [1,0.2], [1,1]]],
-  'V': [[[0,1], [0.5,0], [1,1]]],
-  'W': [[[0,1], [0.2,0], [0.5,0.5], [0.8,0], [1,1]]],
-  'X': [[[0,0], [1,1]], [[0,1], [1,0]]],
-  'Y': [[[0,1], [0.5,0.5]], [[1,1], [0.5,0.5]], [[0.5,0.5], [0.5,0]]],
-  'Z': [[[0,1], [1,1], [0,0], [1,0]]],
-  '0': [[[0.5,0], [0,0.5], [0.5,1], [1,0.5], [0.5,0]], [[0,0], [1,1]]],
-  '1': [[[0,0.8], [0.5,1], [0.5,0]], [[0,0], [1,0]]],
-  '2': [[[0,0.8], [0.5,1], [1,0.8], [0,0], [1,0]]],
-  '3': [[[0,0.8], [0.5,1], [1,0.8], [0.5,0.5]], [[0.5,0.5], [1,0.2], [0.5,0], [0,0.2]]],
-  '4': [[[0.8,0], [0.8,1]], [[0,1], [0,0.4], [1,0.4]]],
-  '5': [[[1,1], [0,1], [0,0.6], [0.5,0.6], [1,0.3], [0.5,0], [0,0.2]]],
-  '6': [[[1,0.8], [0.5,1], [0,0.5], [0.5,0], [1,0.3], [0,0.5]]],
-  '7': [[[0,1], [1,1], [0.5,0]]],
-  '8': [[[0.5,0.5], [1,0.8], [0.5,1], [0,0.8], [0.5,0.5], [1,0.2], [0.5,0], [0,0.2], [0.5,0.5]]],
-  '9': [[[0,0.2], [0.5,0], [1,0.5], [0.5,1], [0,0.7], [1,0.5]]],
-  ' ': []
-};
+export const AVAILABLE_FONTS = Object.keys(FONTS);
 
 async function loadFont(fontFamily: string): Promise<opentype.Font | null> {
-    const key = Object.keys(FONTS).find(k => fontFamily.includes(k.split(' ')[0]));
-    if (!key) return null;
-    
+    // Try to find a partial match if exact match fails
+    const key = Object.keys(FONTS).find(k => fontFamily.toLowerCase().includes(k.toLowerCase())) || 'Roboto Mono';
     const url = FONTS[key];
+    
     if (fontCache[url]) return fontCache[url];
-
+    
     try {
         const response = await fetch(url);
-        if (!response.ok) {
-            console.warn(`Failed to fetch font ${fontFamily}: ${response.statusText}`);
-            return null;
-        }
+        if (!response.ok) throw new Error(`Network response was not ok for ${url}`);
         const buffer = await response.arrayBuffer();
         const font = opentype.parse(buffer);
         fontCache[url] = font;
         return font;
     } catch (err) {
-        console.warn(`Error loading font ${fontFamily}:`, err);
+        console.error(`Font load error for ${fontFamily}, trying fallback:`, err);
         return null;
     }
 }
@@ -77,26 +41,40 @@ async function loadFont(fontFamily: string): Promise<opentype.Font | null> {
 export const generateGCode = async (shapes: Shape[], settings: MachineSettings): Promise<string> => {
   const { feedRate, safeHeight, cutDepth } = settings;
   const lines: string[] = [];
-
-  // Header
   lines.push('; Generated by CNC Forge AI');
-  lines.push('G21 ; Metric units');
-  lines.push('G90 ; Absolute positioning');
-  lines.push(`G0 Z${safeHeight} ; Move to safe height`);
-  lines.push('M3 S1000 ; Spindle on');
+  lines.push('G21 G90');
+  lines.push(`G0 Z${safeHeight}`);
+  lines.push('M3 S1000');
   lines.push('');
 
   for (const shape of shapes) {
-    lines.push(`; Shape: ${shape.type} (ID: ${shape.id})`);
-    
+    lines.push(`; Shape: ${shape.type} ID:${shape.id.substring(0,4)}`);
     switch (shape.type) {
       case ShapeType.RECTANGLE:
-        lines.push(`G0 X${shape.x.toFixed(3)} Y${shape.y.toFixed(3)}`);
-        lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
-        lines.push(`G1 X${(shape.x + shape.width).toFixed(3)} Y${shape.y.toFixed(3)} F${feedRate}`);
-        lines.push(`G1 X${(shape.x + shape.width).toFixed(3)} Y${(shape.y + shape.height).toFixed(3)}`);
-        lines.push(`G1 X${shape.x.toFixed(3)} Y${(shape.y + shape.height).toFixed(3)}`);
-        lines.push(`G1 X${shape.x.toFixed(3)} Y${shape.y.toFixed(3)}`);
+        const r = shape as RectangleShape;
+        const { x, y, width, height, cornerRadius = 0 } = r;
+        
+        if (cornerRadius > 0) {
+            // Rounded Rectangle with G2/G3
+            lines.push(`G0 X${(x + cornerRadius).toFixed(3)} Y${y.toFixed(3)}`);
+            lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
+            
+            lines.push(`G1 X${(x + width - cornerRadius).toFixed(3)} Y${y.toFixed(3)} F${feedRate}`);
+            lines.push(`G2 X${(x + width).toFixed(3)} Y${(y + cornerRadius).toFixed(3)} I0 J${cornerRadius.toFixed(3)}`);
+            lines.push(`G1 X${(x + width).toFixed(3)} Y${(y + height - cornerRadius).toFixed(3)}`);
+            lines.push(`G2 X${(x + width - cornerRadius).toFixed(3)} Y${(y + height).toFixed(3)} I-${cornerRadius.toFixed(3)} J0`);
+            lines.push(`G1 X${(x + cornerRadius).toFixed(3)} Y${(y + height).toFixed(3)}`);
+            lines.push(`G2 X${x.toFixed(3)} Y${(y + height - cornerRadius).toFixed(3)} I0 J-${cornerRadius.toFixed(3)}`);
+            lines.push(`G1 X${x.toFixed(3)} Y${(y + cornerRadius).toFixed(3)}`);
+            lines.push(`G2 X${(x + cornerRadius).toFixed(3)} Y${y.toFixed(3)} I${cornerRadius.toFixed(3)} J0`);
+        } else {
+            lines.push(`G0 X${x.toFixed(3)} Y${y.toFixed(3)}`);
+            lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
+            lines.push(`G1 X${(x + width).toFixed(3)} Y${y.toFixed(3)} F${feedRate}`);
+            lines.push(`G1 X${(x + width).toFixed(3)} Y${(y + height).toFixed(3)}`);
+            lines.push(`G1 X${x.toFixed(3)} Y${(y + height).toFixed(3)}`);
+            lines.push(`G1 X${x.toFixed(3)} Y${y.toFixed(3)}`);
+        }
         lines.push(`G0 Z${safeHeight}`);
         break;
 
@@ -130,17 +108,9 @@ export const generateGCode = async (shapes: Shape[], settings: MachineSettings):
       case ShapeType.HEART:
         const h = shape as HeartShape;
         const steps = 40;
-        // Center x,y. Width/Height to scale.
-        // Parametric heart:
-        // x = 16 sin^3 t
-        // y = 13 cos t - 5 cos 2t - 2 cos 3t - cos 4t
-        // Bounds of standard formula approx: x: [-16, 16], y: [-17, 13] (approx height 30, width 32)
-        // We need to scale to h.width and h.height and translate to h.x, h.y (center)
-        
         const firstPt = calculateHeartPoint(0, h);
         lines.push(`G0 X${firstPt.x.toFixed(3)} Y${firstPt.y.toFixed(3)}`);
         lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
-        
         for (let i = 1; i <= steps; i++) {
             const t = (i / steps) * 2 * Math.PI;
             const pt = calculateHeartPoint(t, h);
@@ -150,116 +120,115 @@ export const generateGCode = async (shapes: Shape[], settings: MachineSettings):
         break;
 
       case ShapeType.TEXT:
-        lines.push(`; Text: "${shape.text}"`);
-        const fontToUse = shape.fontFamily && Object.keys(FONTS).some(f => shape.fontFamily!.includes(f)) 
-            ? await loadFont(shape.fontFamily) 
-            : null;
+        const textShape = shape as TextShape;
+        lines.push(`; Text: "${textShape.text}"`);
+        let fontToUse = await loadFont(textShape.fontFamily || 'Roboto Mono');
+        
+        if (!fontToUse) {
+             console.warn("Could not load font for text generation.");
+             break;
+        }
 
-        if (fontToUse) {
-            // High Quality Vector Path Generation
-            const path = fontToUse.getPath(shape.text, shape.x, shape.y, shape.fontSize);
-            // Convert Bezier curves to linear G-code segments
+        const mirrorMode = textShape.mirrorMode || (textShape.mirror ? MirrorMode.WHOLE : MirrorMode.NONE);
+        
+        const processPath = (path: opentype.Path, offsetX: number) => {
             let lastX = 0, lastY = 0;
+            let startX = 0, startY = 0;
             
+            // If mirroring per char, we need the bounding box to flip around its center
+            // However, OpenType paths are relative to the drawing origin (baseline).
+            // We need to apply the transform to the commands.
+            
+            let centerX = 0;
+            if (mirrorMode === MirrorMode.CHAR) {
+                const bbox = path.getBoundingBox();
+                centerX = (bbox.x1 + bbox.x2) / 2;
+            }
+
+            const mx = (val: number) => {
+                if (mirrorMode === MirrorMode.WHOLE) {
+                    // Mirror around shape X
+                    return textShape.x - (val - textShape.x); 
+                } else if (mirrorMode === MirrorMode.CHAR) {
+                    // Flip around char center relative to the char position (offsetX)
+                    // The path coordinates are already offset by OpenType.getPath
+                    // We need to flip the internal coordinate relative to the char's own center
+                    // But actually, path.commands already have absolute coordinates including offsetX.
+                    // So centerX is the center of the character in world space.
+                    return centerX - (val - centerX);
+                }
+                return val;
+            };
+
             for (const cmd of path.commands) {
                 switch (cmd.type) {
-                    case 'M': // Move to
+                    case 'M':
                         lines.push(`G0 Z${safeHeight}`);
-                        lines.push(`G0 X${cmd.x.toFixed(3)} Y${cmd.y.toFixed(3)}`);
+                        lines.push(`G0 X${mx(cmd.x).toFixed(3)} Y${cmd.y.toFixed(3)}`);
                         lines.push(`G1 Z${-cutDepth} F${feedRate/2}`);
-                        lastX = cmd.x;
-                        lastY = cmd.y;
+                        lastX = cmd.x; lastY = cmd.y;
+                        startX = cmd.x; startY = cmd.y;
                         break;
-                    case 'L': // Line to
-                        lines.push(`G1 X${cmd.x.toFixed(3)} Y${cmd.y.toFixed(3)} F${feedRate}`);
-                        lastX = cmd.x;
-                        lastY = cmd.y;
+                    case 'L':
+                        lines.push(`G1 X${mx(cmd.x).toFixed(3)} Y${cmd.y.toFixed(3)} F${feedRate}`);
+                        lastX = cmd.x; lastY = cmd.y;
                         break;
-                    case 'C': // Cubic Bezier
-                    case 'Q': // Quadratic Bezier
-                        // Simple linear subdivision
+                    case 'C':
+                    case 'Q':
                         const steps = 5;
                         for(let i=1; i<=steps; i++) {
-                             const t = i/steps;
-                             let x, y;
-                             if (cmd.type === 'Q') {
-                                 x = (1-t)*(1-t)*lastX + 2*(1-t)*t*cmd.x1 + t*t*cmd.x;
-                                 y = (1-t)*(1-t)*lastY + 2*(1-t)*t*cmd.y1 + t*t*cmd.y;
-                             } else { // C
-                                 x = Math.pow(1-t,3)*lastX + 3*Math.pow(1-t,2)*t*cmd.x1 + 3*(1-t)*Math.pow(t,2)*cmd.x2 + Math.pow(t,3)*cmd.x;
-                                 y = Math.pow(1-t,3)*lastY + 3*Math.pow(1-t,2)*t*cmd.y1 + 3*(1-t)*Math.pow(t,2)*cmd.y2 + Math.pow(t,3)*cmd.y;
-                             }
-                             lines.push(`G1 X${x.toFixed(3)} Y${y.toFixed(3)} F${feedRate}`);
+                            const t = i/steps;
+                            let x, y;
+                            if (cmd.type === 'Q') {
+                                x = (1-t)*(1-t)*lastX + 2*(1-t)*t*cmd.x1 + t*t*cmd.x;
+                                y = (1-t)*(1-t)*lastY + 2*(1-t)*t*cmd.y1 + t*t*cmd.y;
+                            } else {
+                                x = Math.pow(1-t,3)*lastX + 3*Math.pow(1-t,2)*t*cmd.x1 + 3*(1-t)*Math.pow(t,2)*cmd.x2 + Math.pow(t,3)*cmd.x;
+                                y = Math.pow(1-t,3)*lastY + 3*Math.pow(1-t,2)*t*cmd.y1 + 3*(1-t)*Math.pow(t,2)*cmd.y2 + Math.pow(t,3)*cmd.y;
+                            }
+                            lines.push(`G1 X${mx(x).toFixed(3)} Y${y.toFixed(3)} F${feedRate}`);
                         }
-                        lastX = cmd.x;
-                        lastY = cmd.y;
+                        lastX = cmd.x; lastY = cmd.y;
                         break;
-                    case 'Z': // Close path
+                     case 'Z':
+                        lines.push(`G1 X${mx(startX).toFixed(3)} Y${startY.toFixed(3)} F${feedRate}`);
+                        lastX = startX; lastY = startY;
                         break;
                 }
             }
             lines.push(`G0 Z${safeHeight}`);
-        } else {
-            // Stick Font Generation
-            let currentX = shape.x;
-            const letterSpacing = shape.letterSpacing || 0;
-            const charSpacing = (shape.fontSize * 0.1) + letterSpacing;
-            const charWidth = shape.fontSize * 0.6; 
-            
-            for (const char of shape.text.toUpperCase()) {
-                const paths = SIMPLE_FONT[char] || SIMPLE_FONT['?'] || [];
-                
-                if (paths.length === 0 && char !== ' ') {
-                   // Skip unknown
-                } else if (char === ' ') {
-                    // Just move
-                } else {
-                    paths.forEach(path => {
-                       if (path.length === 0) return;
-                       
-                       const startX = currentX + (path[0][0] * charWidth);
-                       const startY = shape.y - (path[0][1] * shape.fontSize); 
+        };
 
-                       lines.push(`G0 X${startX.toFixed(3)} Y${startY.toFixed(3)}`);
-                       lines.push(`G1 Z${-cutDepth}`);
-                       
-                       for (let i = 1; i < path.length; i++) {
-                           const px = currentX + (path[i][0] * charWidth);
-                           const py = shape.y - (path[i][1] * shape.fontSize);
-                           lines.push(`G1 X${px.toFixed(3)} Y${py.toFixed(3)}`);
-                       }
-                       lines.push(`G0 Z${safeHeight}`);
-                    });
-                }
-                currentX += charWidth + charSpacing;
+        if (mirrorMode === MirrorMode.CHAR) {
+            let cursorX = textShape.x;
+            for (const char of textShape.text) {
+                // Get path for single char at cursor
+                const path = fontToUse.getPath(char, cursorX, textShape.y, textShape.fontSize);
+                processPath(path, cursorX);
+                const advance = fontToUse.getAdvanceWidth(char, textShape.fontSize);
+                cursorX += advance + (textShape.letterSpacing || 0);
             }
+        } else {
+            const path = fontToUse.getPath(textShape.text, textShape.x, textShape.y, textShape.fontSize, { letterSpacing: textShape.letterSpacing });
+            processPath(path, 0);
         }
+        break;
     }
     lines.push('');
   }
-
-  // Footer
-  lines.push('M5 ; Spindle off');
-  lines.push('G0 X0 Y0 ; Return home');
-  lines.push('M30 ; End program');
-
+  lines.push('M5');
+  lines.push('G0 X0 Y0');
+  lines.push('M30');
   return lines.join('\n');
 };
 
 function calculateHeartPoint(t: number, shape: HeartShape): {x: number, y: number} {
-    // Basic normalized heart
     const hx = 16 * Math.pow(Math.sin(t), 3);
     const hy = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
-    
-    // Scale and translate
-    // Raw bounds approx x:[-16,16] w=32, y:[-17, 13] h=30
-    // Flip Y because canvas Y is down, but formula Y is up
-    
     const scaleX = shape.width / 32;
     const scaleY = shape.height / 30;
-    
     return {
         x: shape.x + (hx * scaleX),
-        y: shape.y - (hy * scaleY) // Invert Y logic for canvas
+        y: shape.y - (hy * scaleY)
     };
 }

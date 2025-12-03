@@ -1,3 +1,4 @@
+
 export enum ShapeType {
   RECTANGLE = 'RECTANGLE',
   CIRCLE = 'CIRCLE',
@@ -11,12 +12,19 @@ export enum Tool {
   SELECT = 'SELECT',
   PAN = 'PAN',
   PEN = 'PEN',
+  LINE_CREATE = 'LINE_CREATE',
 }
 
 export enum Unit {
   MM = 'mm',
   INCH = 'in',
   FEET = 'ft',
+}
+
+export enum MirrorMode {
+    NONE = 'NONE',
+    WHOLE = 'WHOLE', // Mirror entire text object
+    CHAR = 'CHAR',   // Mirror individual characters in place
 }
 
 export interface BaseShape {
@@ -30,6 +38,7 @@ export interface RectangleShape extends BaseShape {
   type: ShapeType.RECTANGLE;
   width: number;
   height: number;
+  cornerRadius?: number;
 }
 
 export interface CircleShape extends BaseShape {
@@ -43,6 +52,9 @@ export interface TextShape extends BaseShape {
   fontSize: number;
   fontFamily?: string;
   letterSpacing?: number;
+  mirrorMode?: MirrorMode;
+  // Legacy support
+  mirror?: boolean; 
 }
 
 export interface HeartShape extends BaseShape {
@@ -69,4 +81,17 @@ export interface MachineSettings {
   safeHeight: number;
   cutDepth: number;
   toolDiameter: number;
+}
+
+export interface MachinePosition {
+    x: string;
+    y: string;
+    z: string;
+}
+
+export interface MachineStatus {
+    state: 'Idle' | 'Run' | 'Hold' | 'Alarm' | 'Door' | 'Check' | 'Home' | 'Sleep' | 'Disconnected' | 'Connecting';
+    pos: MachinePosition;
+    feed: string;
+    spindle: string;
 }

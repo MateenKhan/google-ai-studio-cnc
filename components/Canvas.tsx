@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Shape, ShapeType, RectangleShape, CircleShape, TextShape, Tool, HeartShape, LineShape, PolylineShape, Unit } from '../types';
+import { Shape, ShapeType, RectangleShape, CircleShape, TextShape, Tool, HeartShape, LineShape, PolylineShape, Unit, MirrorMode } from '../types';
 import { Trash2 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { formatUnit } from '../utils';
@@ -16,6 +16,9 @@ interface CanvasProps {
   showDimensions: boolean;
   onAddShapeFromPen: (shape: Shape) => void;
   unit: Unit;
+  canvasWidth: number;
+  canvasHeight: number;
+  gridSize: number;
 }
 
 const Canvas: React.FC<CanvasProps> = ({ 
@@ -29,15 +32,23 @@ const Canvas: React.FC<CanvasProps> = ({
     onDeleteShapes,
     showDimensions,
     onAddShapeFromPen,
-    unit
+    unit,
+    canvasWidth,
+    canvasHeight,
+    gridSize
 }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [dragMode, setDragMode] = useState<'SHAPE' | 'PAN' | 'MARQUEE' | 'DRAW' | null>(null);
+  const [dragMode, setDragMode] = useState<'SHAPE' | 'PAN' | 'MARQUEE' | 'DRAW' | 'LINE_CREATE' | null>(null);
   
-  // Panning State
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  // Panning & Zoom State
+  const [pan, setPan] = useState({ x: -50, y: -50 }); 
+  const [zoom, setZoom] = useState(0.5); 
   const panStartRef = useRef<{ x: number, y: number } | null>(null);
+  
+  // Touch Pinch/Pan State
+  const pinchStartDistRef = useRef<number | null>(null);
+  const touchStartCenterRef = useRef<{ x: number, y: number } | null>(null);
   
   // Marquee State
   const [marquee, setMarquee] = useState<{ x: number, y: number, width: number, height: number } | null>(null);
@@ -50,25 +61,55 @@ const Canvas: React.FC<CanvasProps> = ({
     initialShapes: Map<string, { x: number; y: number }>;
   } | null>(null);
 
-  // Drawing State (Pen)
   const [currentPolyline, setCurrentPolyline] = useState<PolylineShape | null>(null);
+  const [currentLine, setCurrentLine] = useState<LineShape | null>(null);
+  const [snapPoint, setSnapPoint] = useState<{x: number, y: number} | null>(null);
 
-  // Helper: Get Mouse Position in SVG Coordinates (Account for ViewBox/Pan)
-  const getSVGPoint = (event: React.PointerEvent) => {
+  const getSVGPoint = (event: React.PointerEvent | React.TouchEvent | MouseEvent) => {
     const svg = svgRef.current;
     if (!svg) return { x: 0, y: 0 };
     const pt = svg.createSVGPoint();
-    pt.x = event.clientX;
-    pt.y = event.clientY;
+    if ('touches' in event && event.touches.length > 0) {
+        pt.x = event.touches[0].clientX;
+        pt.y = event.touches[0].clientY;
+    } else if ('clientX' in event) {
+        pt.x = (event as React.PointerEvent).clientX;
+        pt.y = (event as React.PointerEvent).clientY;
+    }
     const ctm = svg.getScreenCTM();
     if (!ctm) return { x: 0, y: 0 };
     return pt.matrixTransform(ctm.inverse());
   };
 
+  const handleWheel = (e: React.WheelEvent) => {
+      e.preventDefault();
+      const scaleBy = 1.05;
+      const newZoom = e.deltaY < 0 ? zoom * scaleBy : zoom / scaleBy;
+      setZoom(Math.min(Math.max(newZoom, 0.05), 5));
+  };
+
+  const findSnapPoint = (x: number, y: number): {x: number, y: number} | null => {
+      const SNAP_DIST = 10 / zoom;
+      let closest: {x: number, y: number} | null = null;
+      let minDst = Infinity;
+
+      shapes.forEach(s => {
+          if (s.type === ShapeType.LINE) {
+              const l = s as LineShape;
+              const d1 = Math.hypot(l.x - x, l.y - y);
+              const d2 = Math.hypot(l.x2 - x, l.y2 - y);
+              if (d1 < SNAP_DIST && d1 < minDst) { minDst = d1; closest = {x: l.x, y: l.y}; }
+              if (d2 < SNAP_DIST && d2 < minDst) { minDst = d2; closest = {x: l.x2, y: l.y2}; }
+          }
+      });
+      return closest;
+  };
+
   const handlePointerDown = (e: React.PointerEvent) => {
     e.currentTarget.setPointerCapture(e.pointerId);
 
-    if (activeTool === Tool.PAN) {
+    // Middle Mouse Button or Pan Tool
+    if (activeTool === Tool.PAN || e.button === 1) {
         setDragMode('PAN');
         setIsDragging(true);
         panStartRef.current = { x: e.clientX, y: e.clientY };
@@ -89,10 +130,24 @@ const Canvas: React.FC<CanvasProps> = ({
         return;
     }
 
+    if (activeTool === Tool.LINE_CREATE) {
+        setDragMode('LINE_CREATE');
+        setIsDragging(true);
+        const rawPt = getSVGPoint(e);
+        const start = findSnapPoint(rawPt.x, rawPt.y) || rawPt;
+        
+        setCurrentLine({
+            id: uuidv4(),
+            type: ShapeType.LINE,
+            x: start.x, y: start.y,
+            x2: start.x, y2: start.y
+        });
+        return;
+    }
+
     if (activeTool === Tool.SELECT) {
         setDragMode('MARQUEE');
         setIsDragging(true);
-        
         const point = getSVGPoint(e);
         marqueeStartRef.current = { x: point.x, y: point.y };
         setMarquee({ x: point.x, y: point.y, width: 0, height: 0 });
@@ -144,15 +199,30 @@ const Canvas: React.FC<CanvasProps> = ({
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
+    if (dragMode === 'PAN' && panStartRef.current) {
+        const dx = (e.clientX - panStartRef.current.x) / zoom;
+        const dy = (e.clientY - panStartRef.current.y) / zoom;
+        setPan(prev => ({ x: prev.x - dx, y: prev.y - dy }));
+        panStartRef.current = { x: e.clientX, y: e.clientY };
+        return;
+    }
+
+    if (activeTool === Tool.LINE_CREATE && currentLine) {
+        const rawPt = getSVGPoint(e);
+        const snap = findSnapPoint(rawPt.x, rawPt.y);
+        setSnapPoint(snap);
+        const end = snap || rawPt;
+        
+        setCurrentLine({
+            ...currentLine,
+            x2: end.x,
+            y2: end.y
+        });
+        return;
+    }
+
     if (!isDragging) return;
     e.preventDefault(); 
-
-    if (dragMode === 'PAN' && panStartRef.current) {
-        const dx = e.clientX - panStartRef.current.x;
-        const dy = e.clientY - panStartRef.current.y;
-        setPan(prev => ({ x: prev.x + dx, y: prev.y + dy }));
-        panStartRef.current = { x: e.clientX, y: e.clientY };
-    }
 
     if (dragMode === 'MARQUEE' && marqueeStartRef.current) {
         const point = getSVGPoint(e);
@@ -187,7 +257,7 @@ const Canvas: React.FC<CanvasProps> = ({
                         y2: newY + diffY
                     } as LineShape);
                 } else if (shape.type === ShapeType.POLYLINE) {
-                     // Skipping polyline point drags for simplicity
+                     // Skipping complex polyline point drags for simple box
                 } else {
                     updates.push({
                         ...shape,
@@ -213,6 +283,71 @@ const Canvas: React.FC<CanvasProps> = ({
             };
         });
     }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (dragMode === 'MARQUEE' && marquee) {
+        const ids = checkIntersection(marquee);
+        onMultiSelect(ids, e.shiftKey);
+        setMarquee(null);
+    }
+    if (dragMode === 'DRAW' && currentPolyline) {
+        onAddShapeFromPen(currentPolyline);
+        setCurrentPolyline(null);
+    }
+    if (dragMode === 'LINE_CREATE' && currentLine) {
+        if (currentLine.x !== currentLine.x2 || currentLine.y !== currentLine.y2) {
+            onAddShapeFromPen(currentLine);
+        }
+        setCurrentLine(null);
+        setSnapPoint(null);
+    }
+    setIsDragging(false);
+    setDragMode(null);
+    panStartRef.current = null;
+    shapeDragStartRef.current = null;
+    marqueeStartRef.current = null;
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (err) {}
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+      if (e.touches.length === 2) {
+          e.preventDefault();
+          const dist = Math.hypot(
+              e.touches[0].clientX - e.touches[1].clientX,
+              e.touches[0].clientY - e.touches[1].clientY
+          );
+          pinchStartDistRef.current = dist;
+          touchStartCenterRef.current = {
+              x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+              y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+          };
+      }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+      if (e.touches.length === 2 && pinchStartDistRef.current && touchStartCenterRef.current) {
+          e.preventDefault();
+          const dist = Math.hypot(
+              e.touches[0].clientX - e.touches[1].clientX,
+              e.touches[0].clientY - e.touches[1].clientY
+          );
+          const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+          const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+          const distDelta = dist - pinchStartDistRef.current;
+          
+          if (Math.abs(distDelta) > 10) {
+              const scaleBy = 1.02;
+              const newZoom = distDelta > 0 ? zoom * scaleBy : zoom / scaleBy;
+              setZoom(Math.min(Math.max(newZoom, 0.05), 5));
+              pinchStartDistRef.current = dist;
+          } else {
+             const dx = (cx - touchStartCenterRef.current.x) / zoom;
+             const dy = (cy - touchStartCenterRef.current.y) / zoom;
+             setPan(prev => ({ x: prev.x - dx, y: prev.y - dy }));
+             touchStartCenterRef.current = { x: cx, y: cy };
+          }
+      }
   };
 
   const checkIntersection = (rect: {x: number, y: number, width: number, height: number}) => {
@@ -243,37 +378,9 @@ const Canvas: React.FC<CanvasProps> = ({
          
          const x_overlap = Math.max(0, Math.min(rect.x + rect.width, shapeRect.x + shapeRect.width) - Math.max(rect.x, shapeRect.x));
          const y_overlap = Math.max(0, Math.min(rect.y + rect.height, shapeRect.y + shapeRect.height) - Math.max(rect.y, shapeRect.y));
-         
-         if (x_overlap > 0 && y_overlap > 0) {
-             ids.push(shape.id);
-         }
+         if (x_overlap > 0 && y_overlap > 0) ids.push(shape.id);
      });
      return ids;
-  };
-
-  const handlePointerUp = (e: React.PointerEvent) => {
-    if (dragMode === 'MARQUEE' && marquee) {
-        const ids = checkIntersection(marquee);
-        onMultiSelect(ids, e.shiftKey);
-        setMarquee(null);
-    }
-
-    if (dragMode === 'DRAW' && currentPolyline) {
-        onAddShapeFromPen(currentPolyline);
-        setCurrentPolyline(null);
-    }
-
-    setIsDragging(false);
-    setDragMode(null);
-    panStartRef.current = null;
-    shapeDragStartRef.current = null;
-    marqueeStartRef.current = null;
-    
-    if (e.currentTarget) {
-        try {
-            e.currentTarget.releasePointerCapture(e.pointerId);
-        } catch (err) {}
-    }
   };
 
   const renderHeartPath = (s: HeartShape) => {
@@ -283,13 +390,10 @@ const Canvas: React.FC<CanvasProps> = ({
           const t = (i/steps) * 2 * Math.PI;
           const hx = 16 * Math.pow(Math.sin(t), 3);
           const hy = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
-          
           const scaleX = s.width / 32;
           const scaleY = s.height / 30;
-          
           const px = s.x + (hx * scaleX);
           const py = s.y - (hy * scaleY); 
-          
           d += (i===0 ? "M" : "L") + ` ${px} ${py} `;
       }
       d += "Z";
@@ -298,30 +402,20 @@ const Canvas: React.FC<CanvasProps> = ({
 
   const renderDimensions = (shape: Shape) => {
       const dimColor = "#22d3ee"; 
-      const strokeWidth = 1.5 / (unit === Unit.MM ? 1 : (unit === Unit.INCH ? 0.04 : 0.003)); // Scale stroke visually? No, just fixed.
-      const textStyle = { fill: "#e2e8f0", fontSize: 12, fontFamily: "sans-serif", fontWeight: "bold" };
-      const bgStyle = { fill: "rgba(15, 23, 42, 0.7)" };
+      const strokeWidth = 1.5 / zoom; 
+      const textScale = 1 / zoom;
+      const textStyle = { fill: "#e2e8f0", fontSize: 12 * textScale, fontFamily: "sans-serif", fontWeight: "bold" };
 
       if (shape.type === ShapeType.RECTANGLE) {
           const s = shape as RectangleShape;
           const widthLabel = formatUnit(s.width, unit);
           const heightLabel = formatUnit(s.height, unit);
-
           return (
               <g pointerEvents="none" className="select-none">
-                  <line x1={s.x} y1={s.y - 15} x2={s.x + s.width} y2={s.y - 15} stroke={dimColor} strokeWidth={1.5} markerEnd="url(#arrow)" markerStart="url(#arrow-start)" />
-                  <line x1={s.x} y1={s.y} x2={s.x} y2={s.y - 20} stroke={dimColor} strokeWidth="0.5" strokeDasharray="2 2"/>
-                  <line x1={s.x + s.width} y1={s.y} x2={s.x + s.width} y2={s.y - 20} stroke={dimColor} strokeWidth="0.5" strokeDasharray="2 2"/>
-                  
-                  <rect x={s.x + s.width / 2 - 25} y={s.y - 28} width="50" height="14" rx="2" {...bgStyle} />
-                  <text x={s.x + s.width / 2} y={s.y - 19} textAnchor="middle" {...textStyle}>{widthLabel}</text>
-                  
-                  <line x1={s.x - 15} y1={s.y} x2={s.x - 15} y2={s.y + s.height} stroke={dimColor} strokeWidth={1.5} markerEnd="url(#arrow)" markerStart="url(#arrow-start)" />
-                  <line x1={s.x} y1={s.y} x2={s.x - 20} y2={s.y} stroke={dimColor} strokeWidth="0.5" strokeDasharray="2 2"/>
-                  <line x1={s.x} y1={s.y + s.height} x2={s.x - 20} y2={s.y + s.height} stroke={dimColor} strokeWidth="0.5" strokeDasharray="2 2"/>
-
-                  <rect x={s.x - 65} y={s.y + s.height / 2 - 7} width="50" height="14" rx="2" {...bgStyle} />
-                  <text x={s.x - 40} y={s.y + s.height / 2 + 4} textAnchor="middle" {...textStyle}>{heightLabel}</text>
+                  <line x1={s.x} y1={s.y - 15 * textScale} x2={s.x + s.width} y2={s.y - 15 * textScale} stroke={dimColor} strokeWidth={strokeWidth} markerEnd="url(#arrow)" markerStart="url(#arrow-start)" />
+                  <text x={s.x + s.width / 2} y={s.y - 19 * textScale} textAnchor="middle" {...textStyle}>{widthLabel}</text>
+                  <line x1={s.x - 15 * textScale} y1={s.y} x2={s.x - 15 * textScale} y2={s.y + s.height} stroke={dimColor} strokeWidth={strokeWidth} markerEnd="url(#arrow)" markerStart="url(#arrow-start)" />
+                  <text x={s.x - 40 * textScale} y={s.y + s.height / 2} textAnchor="middle" {...textStyle}>{heightLabel}</text>
               </g>
           );
       }
@@ -330,34 +424,64 @@ const Canvas: React.FC<CanvasProps> = ({
           const radiusLabel = `R${formatUnit(s.radius, unit)}`;
            return (
               <g pointerEvents="none" className="select-none">
-                  <line x1={s.x} y1={s.y} x2={s.x + s.radius} y2={s.y} stroke={dimColor} strokeWidth={1.5} markerEnd="url(#arrow)" />
-                  <rect x={s.x + s.radius / 2 - 20} y={s.y - 18} width="40" height="14" rx="2" {...bgStyle} />
-                  <text x={s.x + s.radius / 2} y={s.y - 7} textAnchor="middle" {...textStyle}>{radiusLabel}</text>
+                  <line x1={s.x} y1={s.y} x2={s.x + s.radius} y2={s.y} stroke={dimColor} strokeWidth={strokeWidth} markerEnd="url(#arrow)" />
+                  <text x={s.x + s.radius / 2} y={s.y - 7 * textScale} textAnchor="middle" {...textStyle}>{radiusLabel}</text>
+              </g>
+          );
+      }
+      if (shape.type === ShapeType.LINE) {
+          const s = shape as LineShape;
+          const len = Math.hypot(s.x2 - s.x, s.y2 - s.y);
+          const label = formatUnit(len, unit);
+          return (
+              <g pointerEvents="none" className="select-none">
+                   <text x={(s.x + s.x2)/2} y={(s.y + s.y2)/2 - 10 * textScale} textAnchor="middle" {...textStyle}>{label}</text>
               </g>
           );
       }
       return null;
   };
 
-  const viewBoxStr = `${-20 - pan.x} ${-20 - pan.y} 540 540`;
+  const viewBoxW = window.innerWidth / zoom;
+  const viewBoxH = window.innerHeight / zoom;
+  const viewBoxStr = `${pan.x} ${pan.y} ${viewBoxW} ${viewBoxH}`;
+  
+  // Calculate grid numbers
+  // Generate markers every 50 or 100 units depending on zoom
+  const rulerStep = zoom > 1 ? 10 : zoom > 0.5 ? 50 : 100;
+  const startX = Math.floor(pan.x / rulerStep) * rulerStep;
+  const endX = startX + viewBoxW + rulerStep;
+  const startY = Math.floor(pan.y / rulerStep) * rulerStep;
+  const endY = startY + viewBoxH + rulerStep;
+  
+  const rulerTicks = [];
+  for(let x = startX; x <= endX; x += rulerStep) {
+      if(x % rulerStep === 0) rulerTicks.push({ val: x, type: 'x' });
+  }
+  for(let y = startY; y <= endY; y += rulerStep) {
+      if(y % rulerStep === 0) rulerTicks.push({ val: y, type: 'y' });
+  }
 
   return (
-    <div className={`flex-1 bg-slate-900 relative overflow-hidden flex flex-col items-center justify-center min-h-[400px] ${activeTool === Tool.PAN ? 'cursor-grab active:cursor-grabbing' : ''} ${activeTool === Tool.PEN ? 'cursor-crosshair' : ''}`}>
-      <div className="absolute top-4 left-4 text-slate-500 text-sm select-none pointer-events-none z-10 bg-slate-900/50 backdrop-blur rounded px-2">
-        Canvas (500mm x 500mm)
+    <div className={`flex-1 bg-slate-900 relative overflow-hidden flex flex-col items-center justify-center min-h-[400px] select-none ${activeTool === Tool.PAN ? 'cursor-grab active:cursor-grabbing' : ''} ${activeTool === Tool.PEN || activeTool === Tool.LINE_CREATE ? 'cursor-crosshair' : ''}`}>
+      <div className="absolute top-4 left-4 text-slate-500 text-sm select-none pointer-events-none z-10 bg-slate-900/50 backdrop-blur rounded px-2 border border-slate-700">
+        Canvas: {formatUnit(canvasWidth, unit, 0)} x {formatUnit(canvasHeight, unit, 0)} | Grid: {gridSize}mm | Zoom: {(zoom * 100).toFixed(0)}%
       </div>
 
       <svg 
         ref={svgRef}
-        className="w-full max-w-[500px] aspect-square bg-slate-800 shadow-xl border border-slate-700 touch-none"
+        className="w-full h-full bg-slate-800 touch-none"
         viewBox={viewBoxStr}
+        onWheel={handleWheel}
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
         onPointerMove={handlePointerMove}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
       >
         <defs>
-          <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
-            <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#334155" strokeWidth="0.5" />
+          <pattern id="grid" width={gridSize} height={gridSize} patternUnits="userSpaceOnUse">
+            <path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="#334155" strokeWidth="1" />
           </pattern>
           <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
             <path d="M0,0 L0,6 L6,3 z" fill="#22d3ee" />
@@ -367,24 +491,48 @@ const Canvas: React.FC<CanvasProps> = ({
           </marker>
         </defs>
         
-        {/* Background Grid */}
-        <rect x="0" y="0" width="500" height="500" fill="url(#grid)" />
+        {/* Workspace Bounds */}
+        <rect x="-1000" y="-1000" width={canvasWidth + 2000} height={canvasHeight + 2000} fill="#0f172a" />
+        <rect x="0" y="0" width={canvasWidth} height={canvasHeight} fill="url(#grid)" />
         
-        {/* Origin Indicators */}
-        <g className="pointer-events-none select-none">
-            <line x1="0" y1="0" x2="500" y2="0" stroke="#ef4444" strokeWidth="2" opacity="0.6" />
-            <text x="505" y="5" fill="#ef4444" fontSize="12" fontWeight="bold">X</text>
-            <line x1="0" y1="0" x2="0" y2="500" stroke="#22c55e" strokeWidth="2" opacity="0.6" />
-            <text x="-5" y="505" fill="#22c55e" fontSize="12" fontWeight="bold">Y</text>
-            <circle cx="0" cy="0" r="4" fill="#3b82f6" />
-            <text x="-15" y="-8" fill="#94a3b8" fontSize="10">(0,0)</text>
+        {/* Origin Axes */}
+        <line x1="-10000" y1="0" x2="10000" y2="0" stroke="#ef4444" strokeWidth={2/zoom} opacity="0.8" />
+        <line x1="0" y1="-10000" x2="0" y2="10000" stroke="#22c55e" strokeWidth={2/zoom} opacity="0.8" />
+        
+        {/* Ruler Ticks */}
+        <g className="select-none pointer-events-none">
+            {rulerTicks.map((tick, i) => (
+                <g key={`${tick.type}-${tick.val}`}>
+                    {tick.type === 'x' ? (
+                        <>
+                            <line x1={tick.val} y1={-5/zoom} x2={tick.val} y2={5/zoom} stroke="#64748b" strokeWidth={1/zoom} />
+                            {tick.val !== 0 && (
+                                <text x={tick.val} y={15/zoom} fill="#64748b" fontSize={10/zoom} textAnchor="middle" fontFamily="monospace">
+                                    {tick.val}
+                                </text>
+                            )}
+                        </>
+                    ) : (
+                        <>
+                            <line x1={-5/zoom} y1={tick.val} x2={5/zoom} y2={tick.val} stroke="#64748b" strokeWidth={1/zoom} />
+                            {tick.val !== 0 && (
+                                <text x={-10/zoom} y={tick.val + 3/zoom} fill="#64748b" fontSize={10/zoom} textAnchor="end" fontFamily="monospace">
+                                    {tick.val}
+                                </text>
+                            )}
+                        </>
+                    )}
+                </g>
+            ))}
+            <text x="5/zoom" y="-5/zoom" fill="#ef4444" fontSize={12/zoom} fontWeight="bold">0,0</text>
         </g>
         
         {/* Shapes */}
-        {[...shapes, ...(currentPolyline ? [currentPolyline] : [])].map(shape => {
+        {[...shapes, ...(currentPolyline ? [currentPolyline] : []), ...(currentLine ? [currentLine] : [])].map(shape => {
            const isSelected = selectedIds.includes(shape.id);
            const stroke = isSelected ? "#38bdf8" : "#94a3b8";
-           const isPreview = shape.id === currentPolyline?.id;
+           const isPreview = shape.id === currentPolyline?.id || shape.id === currentLine?.id;
+           const sw = (isSelected || isPreview ? 2 : 1) / zoom;
            
            const commonProps = {
                onPointerDown: (e: React.PointerEvent) => handleShapePointerDown(e, shape),
@@ -398,9 +546,10 @@ const Canvas: React.FC<CanvasProps> = ({
                <rect
                 key={s.id}
                 x={s.x} y={s.y} width={s.width} height={s.height}
+                rx={s.cornerRadius || 0}
                 fill={isSelected ? "rgba(56, 189, 248, 0.2)" : "rgba(56, 189, 248, 0.05)"}
                 stroke={stroke}
-                strokeWidth={isSelected ? 2 : 1}
+                strokeWidth={sw}
                 {...commonProps}
                />
              );
@@ -413,22 +562,50 @@ const Canvas: React.FC<CanvasProps> = ({
                 cx={s.x} cy={s.y} r={s.radius}
                 fill={isSelected ? "rgba(56, 189, 248, 0.2)" : "rgba(56, 189, 248, 0.05)"}
                 stroke={stroke}
-                strokeWidth={isSelected ? 2 : 1}
+                strokeWidth={sw}
                 {...commonProps}
                />
              );
            }
            if (shape.type === ShapeType.TEXT) {
              const s = shape as TextShape;
+             const isMirrored = s.mirrorMode === MirrorMode.WHOLE || s.mirror;
+             
+             if (s.mirrorMode === MirrorMode.CHAR) {
+                 return (
+                    <g key={s.id} {...commonProps} className="select-none">
+                        {s.text.split('').map((char, i) => (
+                             <text 
+                                key={i}
+                                x={s.x + i * (s.fontSize * 0.6 + (s.letterSpacing || 0))} 
+                                y={s.y}
+                                fill={stroke}
+                                fontSize={s.fontSize}
+                                fontFamily={s.fontFamily || "Roboto Mono"}
+                                textAnchor="middle"
+                                transform={`translate(${s.x + i * (s.fontSize * 0.6) + (s.fontSize*0.3)}, ${s.y - s.fontSize/2}) scale(-1, 1) translate(-${s.x + i * (s.fontSize * 0.6) + (s.fontSize*0.3)}, -${s.y - s.fontSize/2})`}
+                             >
+                                 {char}
+                             </text>
+                        ))}
+                    </g>
+                 );
+             }
+
+             const transform = isMirrored
+                ? `translate(${s.x}, ${s.y}) scale(-1, 1) translate(${-s.x}, ${-s.y})` 
+                : undefined;
+             
              return (
                <text
                 key={s.id}
                 x={s.x} y={s.y}
                 fill={stroke}
                 fontSize={s.fontSize}
-                fontFamily={s.fontFamily || "monospace"}
+                fontFamily={s.fontFamily || "Roboto Mono"}
                 letterSpacing={s.letterSpacing || 0}
                 fontWeight={isSelected ? "bold" : "normal"}
+                transform={transform}
                 {...commonProps}
                 className={`${commonProps.className} select-none`}
                >
@@ -444,7 +621,7 @@ const Canvas: React.FC<CanvasProps> = ({
                     d={renderHeartPath(s)}
                     fill={isSelected ? "rgba(244, 114, 182, 0.2)" : "rgba(244, 114, 182, 0.05)"}
                     stroke={isSelected ? "#f472b6" : "#94a3b8"}
-                    strokeWidth={isSelected ? 2 : 1}
+                    strokeWidth={sw}
                     {...commonProps}
                    />
                );
@@ -456,7 +633,7 @@ const Canvas: React.FC<CanvasProps> = ({
                     key={s.id}
                     x1={s.x} y1={s.y} x2={s.x2} y2={s.y2}
                     stroke={stroke}
-                    strokeWidth={isSelected ? 2 : 1}
+                    strokeWidth={sw}
                     {...commonProps}
                    />
                );
@@ -470,7 +647,7 @@ const Canvas: React.FC<CanvasProps> = ({
                     points={pointsStr}
                     fill="none"
                     stroke={isPreview ? "#22d3ee" : stroke}
-                    strokeWidth={isSelected || isPreview ? 2 : 1}
+                    strokeWidth={sw}
                     {...commonProps}
                    />
                );
@@ -478,17 +655,15 @@ const Canvas: React.FC<CanvasProps> = ({
            return null;
         })}
 
-        {/* Dimensions Layer */}
+        {snapPoint && (
+            <circle cx={snapPoint.x} cy={snapPoint.y} r={5/zoom} fill="transparent" stroke="#facc15" strokeWidth={2/zoom} />
+        )}
+
         {showDimensions && shapes.map(shape => {
             if (!selectedIds.includes(shape.id)) return null;
-            return (
-             <React.Fragment key={`dim-${shape.id}`}>
-                 {renderDimensions(shape)}
-             </React.Fragment>
-            );
+            return <React.Fragment key={`dim-${shape.id}`}>{renderDimensions(shape)}</React.Fragment>;
         })}
 
-        {/* Marquee Selection Box */}
         {marquee && (
             <rect
                 x={marquee.x}
@@ -497,7 +672,7 @@ const Canvas: React.FC<CanvasProps> = ({
                 height={marquee.height}
                 fill="rgba(56, 189, 248, 0.1)"
                 stroke="#38bdf8"
-                strokeWidth="1"
+                strokeWidth={1/zoom}
                 strokeDasharray="4 2"
                 pointerEvents="none"
             />
@@ -505,21 +680,12 @@ const Canvas: React.FC<CanvasProps> = ({
       </svg>
       
       {selectedIds.length > 0 && (
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-800 p-2 rounded-full shadow-lg border border-slate-700 flex gap-4 z-20 items-center">
-           <span className="text-xs text-slate-400 px-2 flex items-center whitespace-nowrap">
-             <span className="bg-sky-500/20 text-sky-400 px-2 py-0.5 rounded-full mr-2">
-                 {selectedIds.length}
-             </span>
-             <span className="hidden sm:inline">Selected</span>
-           </span>
-           <div className="h-4 w-px bg-slate-700"></div>
+        <div className="absolute bottom-24 md:bottom-24 left-1/2 -translate-x-1/2 bg-slate-800 p-2 rounded-full shadow-lg border border-slate-700 flex gap-4 z-20 items-center">
            <button 
              onClick={() => onDeleteShapes(selectedIds)}
              className="p-1 hover:bg-red-500/20 text-red-400 rounded-full transition-colors flex items-center gap-1 pr-3"
-             title="Delete Selected"
            >
-             <Trash2 size={16} />
-             <span className="text-xs font-semibold">Delete</span>
+             <Trash2 size={16} /> Delete
            </button>
         </div>
       )}
