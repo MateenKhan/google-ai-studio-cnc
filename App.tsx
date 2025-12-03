@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import Toolbar from './components/Toolbar';
+import ToolPalette from './components/ToolPalette';
 import Canvas from './components/Canvas';
 import PropertiesPanel from './components/PropertiesPanel';
 import CodeEditor from './components/CodeEditor';
@@ -8,7 +8,6 @@ import CodeEditor from './components/CodeEditor';
 import { Shape, ShapeType, MachineSettings, Tool } from './types';
 import { generateGCode } from './services/gcodeService';
 // import { generateShapesFromPrompt, explainGCode } from './services/geminiService';
-import { ChevronLeft, ChevronRight, Menu } from 'lucide-react';
 
 const DEFAULT_SETTINGS: MachineSettings = {
   feedRate: 800,
@@ -28,7 +27,6 @@ const App: React.FC = () => {
   const [showDimensions, setShowDimensions] = useState(false);
   
   // Layout State
-  const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(true);
   const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
 
   // Auto-generate G-code when shapes change
@@ -56,13 +54,23 @@ const App: React.FC = () => {
       case ShapeType.TEXT:
         newShape = { id, type, x: 50, y: 150, text: "CNC", fontSize: 24, fontFamily: 'monospace', letterSpacing: 0 };
         break;
+      case ShapeType.HEART:
+        newShape = { id, type, x: 150, y: 150, width: 40, height: 40 };
+        break;
+      case ShapeType.LINE:
+        newShape = { id, type, x: 50, y: 50, x2: 150, y2: 150 }; // Default diagonal line
+        break;
       default:
         return;
     }
 
     setShapes(prev => [...prev, newShape]);
     setSelectedIds([id]);
-    setActiveTool(Tool.SELECT); // Switch back to select mode after adding
+    setActiveTool(Tool.SELECT); 
+  };
+
+  const handleAddShapeFromPen = (shape: Shape) => {
+      setShapes(prev => [...prev, shape]);
   };
 
   const handleUpdateShape = (updatedShape: Shape) => {
@@ -98,7 +106,6 @@ const App: React.FC = () => {
     }
   };
 
-  // Callback for marquee selection from canvas
   const handleMultiSelect = (ids: string[], addToExisting: boolean) => {
     if (addToExisting) {
         setSelectedIds(prev => {
@@ -151,43 +158,21 @@ const App: React.FC = () => {
   const selectedShapes = shapes.filter(s => selectedIds.includes(s.id));
 
   return (
-    <div className="flex flex-col md:flex-row h-[100dvh] bg-slate-900 text-slate-100 font-sans overflow-hidden">
+    <div className="flex flex-col md:flex-row h-[100dvh] bg-slate-900 text-slate-100 font-sans overflow-hidden relative">
       
-      {/* Left Sidebar (Toolbar) */}
-      <div className={`${isLeftPanelOpen ? 'w-16 md:w-20' : 'w-0'} transition-all duration-300 relative bg-slate-800 border-r border-slate-700 flex flex-col shrink-0`}>
-          <div className="overflow-hidden h-full">
-            <Toolbar 
+      <main className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
+        <div className="flex-1 flex flex-col relative bg-slate-950 overflow-hidden mb-16 md:mb-0">
+             
+            <ToolPalette 
                 activeTool={activeTool}
                 onSelectTool={setActiveTool}
                 onAddShape={handleAddShape} 
                 onOpenAI={() => setIsAIModalOpen(true)}
                 showDimensions={showDimensions}
                 onToggleDimensions={() => setShowDimensions(!showDimensions)}
+                isSidebarOpen={isRightPanelOpen}
+                onToggleSidebar={() => setIsRightPanelOpen(!isRightPanelOpen)}
             />
-          </div>
-      </div>
-      
-      {/* Toggle Left Button */}
-      <button 
-        onClick={() => setIsLeftPanelOpen(!isLeftPanelOpen)}
-        className="absolute left-0 top-1/2 -translate-y-1/2 z-30 bg-slate-800 text-slate-400 p-1 rounded-r border-y border-r border-slate-700 hover:text-white hover:bg-slate-700 transition-transform"
-        style={{ transform: isLeftPanelOpen ? 'translateX(calc(100% + 4rem))' : 'translateX(0)', left: isLeftPanelOpen ? '0' : '0' }}
-      >
-          {isLeftPanelOpen ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
-      </button>
-
-      <main className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
-        <div className="flex-1 flex flex-col relative bg-slate-950 overflow-hidden">
-             
-             {/* Mobile Toggle for Left Sidebar (visible only on small screens) */}
-             {!isLeftPanelOpen && (
-                 <button 
-                   onClick={() => setIsLeftPanelOpen(true)}
-                   className="md:hidden absolute top-4 left-4 z-40 bg-slate-800 p-2 rounded text-slate-200 shadow-lg"
-                 >
-                   <Menu size={20} />
-                 </button>
-             )}
 
             <Canvas 
                 shapes={shapes}
@@ -199,28 +184,30 @@ const App: React.FC = () => {
                 selectedIds={selectedIds}
                 onDeleteShapes={handleDeleteShapes}
                 showDimensions={showDimensions}
+                onAddShapeFromPen={handleAddShapeFromPen}
             />
         </div>
 
-        {/* Toggle Right Button */}
-        <button 
-             onClick={() => setIsRightPanelOpen(!isRightPanelOpen)}
-             className="hidden md:flex absolute right-0 top-1/2 -translate-y-1/2 z-30 bg-slate-800 text-slate-400 p-1 rounded-l border-y border-l border-slate-700 hover:text-white hover:bg-slate-700 items-center justify-center transition-all"
-             style={{ right: isRightPanelOpen ? '400px' : '0' }}
+        {/* Right Sidebar - Modal on Mobile, Column on Desktop */}
+        <div 
+          className={`
+            fixed inset-y-0 right-0 z-40 bg-slate-800 border-l border-slate-700 shadow-2xl transition-all duration-300
+            ${isRightPanelOpen ? 'translate-x-0' : 'translate-x-full'}
+            md:static md:translate-x-0 md:transition-all
+            ${isRightPanelOpen ? 'md:w-[400px]' : 'md:w-0'}
+            md:flex md:flex-col md:overflow-hidden
+            w-full md:w-auto
+          `}
         >
-             {isRightPanelOpen ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-        </button>
-
-        {/* Right Sidebar */}
-        <div className={`${isRightPanelOpen ? 'w-full md:w-[400px]' : 'w-0'} transition-all duration-300 flex flex-col bg-slate-800 shrink-0 shadow-2xl z-20 border-l border-slate-700 overflow-hidden`}>
-          <div className="h-1/2 border-b border-slate-700 overflow-y-auto custom-scrollbar">
+          <div className="h-1/2 border-b border-slate-700 overflow-y-auto custom-scrollbar flex flex-col">
             <PropertiesPanel 
                 selectedShapes={selectedShapes} 
                 onUpdateShape={handleUpdateShape}
                 onUpdateShapes={handleUpdateShapes}
                 onDelete={handleDeleteShapes}
+                onClose={() => setIsRightPanelOpen(false)}
             />
-            <div className="p-4 border-t border-slate-700">
+            <div className="p-4 border-t border-slate-700 mt-auto">
                 <h4 className="text-xs font-semibold text-slate-400 mb-2">Machine Settings (Global)</h4>
                 <div className="grid grid-cols-2 gap-2 text-xs text-slate-500">
                     <div>Feed: {DEFAULT_SETTINGS.feedRate} mm/min</div>

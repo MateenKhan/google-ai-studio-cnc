@@ -1,21 +1,27 @@
 import React from 'react';
-import { Shape, ShapeType, RectangleShape, CircleShape, TextShape } from '../types';
-import { Layers, Trash2 } from 'lucide-react';
+import { Shape, ShapeType, RectangleShape, CircleShape, TextShape, HeartShape, LineShape } from '../types';
+import { Layers, Trash2, X } from 'lucide-react';
 
 interface PropertiesPanelProps {
   selectedShapes: Shape[];
   onUpdateShape: (updated: Shape) => void;
   onUpdateShapes: (updatedShapes: Shape[]) => void;
   onDelete: (ids: string[]) => void;
+  onClose: () => void;
 }
 
-const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedShapes, onUpdateShape, onUpdateShapes, onDelete }) => {
+const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedShapes, onUpdateShape, onUpdateShapes, onDelete, onClose }) => {
   if (selectedShapes.length === 0) {
     return (
-      <div className="p-8 text-slate-600 flex flex-col items-center text-center">
-        <Layers size={48} className="mb-4 opacity-50" />
-        <p className="text-sm">Select a shape to edit properties.</p>
-        <p className="text-xs mt-2 text-slate-700">Hold Shift or use "Multi-Select" to select multiple items.</p>
+      <div className="p-4 flex flex-col h-full relative">
+         <button onClick={onClose} className="md:hidden absolute top-0 right-0 p-2 text-slate-400 hover:text-white">
+            <X size={20} />
+         </button>
+        <div className="flex-1 flex flex-col items-center justify-center text-slate-600 text-center p-8">
+            <Layers size={48} className="mb-4 opacity-50" />
+            <p className="text-sm">Select a shape to edit properties.</p>
+            <p className="text-xs mt-2 text-slate-700">Hold Shift or use "Multi-Select" to select multiple items.</p>
+        </div>
       </div>
     );
   }
@@ -48,10 +54,15 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedShapes, onUpd
   const isAllRectangles = selectedShapes.every(s => s.type === ShapeType.RECTANGLE);
   const isAllCircles = selectedShapes.every(s => s.type === ShapeType.CIRCLE);
   const isAllText = selectedShapes.every(s => s.type === ShapeType.TEXT);
+  const isAllHearts = selectedShapes.every(s => s.type === ShapeType.HEART);
+  const isAllLines = selectedShapes.every(s => s.type === ShapeType.LINE);
 
   return (
-    <div className="p-4 flex flex-col gap-4">
-      <h3 className="text-slate-100 font-semibold border-b border-slate-700 pb-2 flex justify-between items-center">
+    <div className="p-4 flex flex-col gap-4 relative">
+       <button onClick={onClose} className="md:hidden absolute top-2 right-2 text-slate-400 hover:text-white">
+            <X size={20} />
+       </button>
+      <h3 className="text-slate-100 font-semibold border-b border-slate-700 pb-2 flex justify-between items-center pr-8">
         <span>Properties</span>
         {selectedShapes.length > 1 && (
              <span className="bg-sky-900 text-sky-200 text-xs px-2 py-0.5 rounded-full">{selectedShapes.length} Items</span>
@@ -82,14 +93,14 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedShapes, onUpd
         </div>
       </div>
 
-      {/* Specific Properties - Only shown if all selected are same type */}
+      {/* Specific Properties */}
       {isAllRectangles && (
         <div className="grid grid-cols-2 gap-2">
           <div className="flex flex-col gap-1">
             <label className="text-xs text-slate-400">Width</label>
             <input 
               type="number" 
-              value={(selectedShapes[0] as RectangleShape).width} // Assuming mixed checks handle rendering or logic
+              value={(selectedShapes[0] as RectangleShape).width} 
               placeholder={selectedShapes.every(s => (s as RectangleShape).width === (selectedShapes[0] as RectangleShape).width) ? '' : 'Mixed'}
               onChange={(e) => {
                   const val = Number(e.target.value);
@@ -130,6 +141,68 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedShapes, onUpd
             }}
             className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none placeholder-slate-600 italic"
           />
+        </div>
+      )}
+
+      {isAllHearts && (
+        <div className="grid grid-cols-2 gap-2">
+            <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-400">Width</label>
+                <input 
+                type="number" 
+                value={(selectedShapes[0] as HeartShape).width} 
+                onChange={(e) => {
+                    const val = Number(e.target.value);
+                    const updates = selectedShapes.map(s => ({ ...s, width: val } as HeartShape));
+                    onUpdateShapes(updates);
+                }}
+                className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
+                />
+            </div>
+            <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-400">Height</label>
+                <input 
+                type="number" 
+                value={(selectedShapes[0] as HeartShape).height} 
+                onChange={(e) => {
+                    const val = Number(e.target.value);
+                    const updates = selectedShapes.map(s => ({ ...s, height: val } as HeartShape));
+                    onUpdateShapes(updates);
+                }}
+                className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
+                />
+            </div>
+        </div>
+      )}
+
+      {isAllLines && (
+        <div className="grid grid-cols-2 gap-2">
+            <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-400">End X (mm)</label>
+                <input 
+                type="number" 
+                value={(selectedShapes[0] as LineShape).x2} 
+                onChange={(e) => {
+                    const val = Number(e.target.value);
+                    const updates = selectedShapes.map(s => ({ ...s, x2: val } as LineShape));
+                    onUpdateShapes(updates);
+                }}
+                className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
+                />
+            </div>
+            <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-400">End Y (mm)</label>
+                <input 
+                type="number" 
+                value={(selectedShapes[0] as LineShape).y2} 
+                onChange={(e) => {
+                    const val = Number(e.target.value);
+                    const updates = selectedShapes.map(s => ({ ...s, y2: val } as LineShape));
+                    onUpdateShapes(updates);
+                }}
+                className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
+                />
+            </div>
         </div>
       )}
 
@@ -200,7 +273,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedShapes, onUpd
         </>
       )}
 
-      {selectedShapes.length > 1 && !isAllRectangles && !isAllCircles && !isAllText && (
+      {selectedShapes.length > 1 && !isAllRectangles && !isAllCircles && !isAllText && !isAllHearts && !isAllLines && (
          <div className="text-xs text-slate-500 italic mt-2">
             Selected items are different types. Only position (X, Y) can be edited in bulk.
          </div>

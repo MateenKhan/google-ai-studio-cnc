@@ -1,4 +1,4 @@
-import { Shape, ShapeType, MachineSettings } from '../types';
+import { Shape, ShapeType, MachineSettings, LineShape, PolylineShape, HeartShape } from '../types';
 import opentype from 'opentype.js';
 
 // Cache for loaded fonts
@@ -107,6 +107,48 @@ export const generateGCode = async (shapes: Shape[], settings: MachineSettings):
         lines.push(`G0 Z${safeHeight}`);
         break;
 
+      case ShapeType.LINE:
+        const l = shape as LineShape;
+        lines.push(`G0 X${l.x.toFixed(3)} Y${l.y.toFixed(3)}`);
+        lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
+        lines.push(`G1 X${l.x2.toFixed(3)} Y${l.y2.toFixed(3)} F${feedRate}`);
+        lines.push(`G0 Z${safeHeight}`);
+        break;
+
+      case ShapeType.POLYLINE:
+        const p = shape as PolylineShape;
+        if (p.points.length > 0) {
+            lines.push(`G0 X${p.points[0].x.toFixed(3)} Y${p.points[0].y.toFixed(3)}`);
+            lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
+            for (let i = 1; i < p.points.length; i++) {
+                lines.push(`G1 X${p.points[i].x.toFixed(3)} Y${p.points[i].y.toFixed(3)} F${feedRate}`);
+            }
+            lines.push(`G0 Z${safeHeight}`);
+        }
+        break;
+
+      case ShapeType.HEART:
+        const h = shape as HeartShape;
+        const steps = 40;
+        // Center x,y. Width/Height to scale.
+        // Parametric heart:
+        // x = 16 sin^3 t
+        // y = 13 cos t - 5 cos 2t - 2 cos 3t - cos 4t
+        // Bounds of standard formula approx: x: [-16, 16], y: [-17, 13] (approx height 30, width 32)
+        // We need to scale to h.width and h.height and translate to h.x, h.y (center)
+        
+        const firstPt = calculateHeartPoint(0, h);
+        lines.push(`G0 X${firstPt.x.toFixed(3)} Y${firstPt.y.toFixed(3)}`);
+        lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
+        
+        for (let i = 1; i <= steps; i++) {
+            const t = (i / steps) * 2 * Math.PI;
+            const pt = calculateHeartPoint(t, h);
+            lines.push(`G1 X${pt.x.toFixed(3)} Y${pt.y.toFixed(3)} F${feedRate}`);
+        }
+        lines.push(`G0 Z${safeHeight}`);
+        break;
+
       case ShapeType.TEXT:
         lines.push(`; Text: "${shape.text}"`);
         const fontToUse = shape.fontFamily && Object.keys(FONTS).some(f => shape.fontFamily!.includes(f)) 
@@ -117,7 +159,6 @@ export const generateGCode = async (shapes: Shape[], settings: MachineSettings):
             // High Quality Vector Path Generation
             const path = fontToUse.getPath(shape.text, shape.x, shape.y, shape.fontSize);
             // Convert Bezier curves to linear G-code segments
-            // We can simple iterate commands
             let lastX = 0, lastY = 0;
             
             for (const cmd of path.commands) {
@@ -136,11 +177,7 @@ export const generateGCode = async (shapes: Shape[], settings: MachineSettings):
                         break;
                     case 'C': // Cubic Bezier
                     case 'Q': // Quadratic Bezier
-                        // Crude approximation: just go to end point for now, or use a library helper to flatten.
-                        // OpenType.js doesn't natively "flatten" nicely to lines in commands list, but we can sample.
-                        // For simplicity in this environment, we treat as LineTo the end point to ensure connectivity,
-                        // or better: subdivide.
-                        // Let's implement a basic subdivision for 'Q' and 'C'.
+                        // Simple linear subdivision
                         const steps = 5;
                         for(let i=1; i<=steps; i++) {
                              const t = i/steps;
@@ -158,7 +195,6 @@ export const generateGCode = async (shapes: Shape[], settings: MachineSettings):
                         lastY = cmd.y;
                         break;
                     case 'Z': // Close path
-                        // Usually implies connecting back to start of subpath, which usually happens in Font rendering
                         break;
                 }
             }
@@ -174,33 +210,16 @@ export const generateGCode = async (shapes: Shape[], settings: MachineSettings):
                 const paths = SIMPLE_FONT[char] || SIMPLE_FONT['?'] || [];
                 
                 if (paths.length === 0 && char !== ' ') {
-                    // Unknown char box
-                    lines.push(`; Unknown char: ${char}`);
-                    lines.push(`G0 X${currentX.toFixed(3)} Y${shape.y.toFixed(3)}`);
-                    lines.push(`G1 Z${-cutDepth}`);
-                    lines.push(`G1 X${(currentX + charWidth).toFixed(3)} Y${shape.y.toFixed(3)}`);
-                    lines.push(`G1 X${(currentX + charWidth).toFixed(3)} Y${(shape.y + shape.fontSize).toFixed(3)}`);
-                    lines.push(`G1 X${currentX.toFixed(3)} Y${(shape.y + shape.fontSize).toFixed(3)}`);
-                    lines.push(`G1 X${currentX.toFixed(3)} Y${shape.y.toFixed(3)}`);
-                    lines.push(`G0 Z${safeHeight}`);
+                   // Skip unknown
                 } else if (char === ' ') {
                     // Just move
                 } else {
                     paths.forEach(path => {
                        if (path.length === 0) return;
                        
-                       // Move to first point
-                       // Stick font coordinates are 0-1 normalized, scaled by charWidth/Height
-                       // Note: SVG text draws from Bottom-Left usually? No, SVG Text is baseline.
-                       // Our stick font 0,0 is bottom-left relative.
                        const startX = currentX + (path[0][0] * charWidth);
-                       const startY = shape.y - (path[0][1] * shape.fontSize); // Invert Y for CNC usually, but let's keep consistency with canvas
+                       const startY = shape.y - (path[0][1] * shape.fontSize); 
 
-                       // Canvas Text (s.x, s.y) is bottom-left baseline usually in simple rendering? 
-                       // Actually in <text> y is baseline. 
-                       // Let's assume the Stick Font is Y-up (0 is bottom, 1 is top).
-                       // So if shape.y is baseline, we subtract to go up.
-                       
                        lines.push(`G0 X${startX.toFixed(3)} Y${startY.toFixed(3)}`);
                        lines.push(`G1 Z${-cutDepth}`);
                        
@@ -226,3 +245,21 @@ export const generateGCode = async (shapes: Shape[], settings: MachineSettings):
 
   return lines.join('\n');
 };
+
+function calculateHeartPoint(t: number, shape: HeartShape): {x: number, y: number} {
+    // Basic normalized heart
+    const hx = 16 * Math.pow(Math.sin(t), 3);
+    const hy = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
+    
+    // Scale and translate
+    // Raw bounds approx x:[-16,16] w=32, y:[-17, 13] h=30
+    // Flip Y because canvas Y is down, but formula Y is up
+    
+    const scaleX = shape.width / 32;
+    const scaleY = shape.height / 30;
+    
+    return {
+        x: shape.x + (hx * scaleX),
+        y: shape.y - (hy * scaleY) // Invert Y logic for canvas
+    };
+}

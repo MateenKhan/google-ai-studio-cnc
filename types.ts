@@ -2,11 +2,15 @@ export enum ShapeType {
   RECTANGLE = 'RECTANGLE',
   CIRCLE = 'CIRCLE',
   TEXT = 'TEXT',
+  HEART = 'HEART',
+  LINE = 'LINE',
+  POLYLINE = 'POLYLINE',
 }
 
 export enum Tool {
   SELECT = 'SELECT',
   PAN = 'PAN',
+  PEN = 'PEN',
 }
 
 export interface BaseShape {
@@ -35,7 +39,24 @@ export interface TextShape extends BaseShape {
   letterSpacing?: number;
 }
 
-export type Shape = RectangleShape | CircleShape | TextShape;
+export interface HeartShape extends BaseShape {
+  type: ShapeType.HEART;
+  width: number;
+  height: number;
+}
+
+export interface LineShape extends BaseShape {
+  type: ShapeType.LINE;
+  x2: number;
+  y2: number;
+}
+
+export interface PolylineShape extends BaseShape {
+  type: ShapeType.POLYLINE;
+  points: {x: number, y: number}[];
+}
+
+export type Shape = RectangleShape | CircleShape | TextShape | HeartShape | LineShape | PolylineShape;
 
 export interface MachineSettings {
   feedRate: number;
