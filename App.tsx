@@ -5,9 +5,10 @@ import Canvas from './components/Canvas';
 import PropertiesPanel from './components/PropertiesPanel';
 import CodeEditor from './components/CodeEditor';
 // import AIAssistant from './components/AIAssistant';
-import { Shape, ShapeType, MachineSettings, Tool } from './types';
+import { Shape, ShapeType, MachineSettings, Tool, Unit } from './types';
 import { generateGCode } from './services/gcodeService';
-// import { generateShapesFromPrompt, explainGCode } from './services/geminiService';
+
+import { Wrench } from 'lucide-react';
 
 const DEFAULT_SETTINGS: MachineSettings = {
   feedRate: 800,
@@ -25,6 +26,8 @@ const App: React.FC = () => {
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [isAILoading, setIsAILoading] = useState(false);
   const [showDimensions, setShowDimensions] = useState(false);
+  const [unit, setUnit] = useState<Unit>(Unit.MM);
+  const [isPaletteVisible, setIsPaletteVisible] = useState(true);
   
   // Layout State
   const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
@@ -58,7 +61,7 @@ const App: React.FC = () => {
         newShape = { id, type, x: 150, y: 150, width: 40, height: 40 };
         break;
       case ShapeType.LINE:
-        newShape = { id, type, x: 50, y: 50, x2: 150, y2: 150 }; // Default diagonal line
+        newShape = { id, type, x: 50, y: 50, x2: 150, y2: 150 }; 
         break;
       default:
         return;
@@ -163,16 +166,29 @@ const App: React.FC = () => {
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
         <div className="flex-1 flex flex-col relative bg-slate-950 overflow-hidden mb-16 md:mb-0">
              
-            <ToolPalette 
-                activeTool={activeTool}
-                onSelectTool={setActiveTool}
-                onAddShape={handleAddShape} 
-                onOpenAI={() => setIsAIModalOpen(true)}
-                showDimensions={showDimensions}
-                onToggleDimensions={() => setShowDimensions(!showDimensions)}
-                isSidebarOpen={isRightPanelOpen}
-                onToggleSidebar={() => setIsRightPanelOpen(!isRightPanelOpen)}
-            />
+            {isPaletteVisible ? (
+                <ToolPalette 
+                    activeTool={activeTool}
+                    onSelectTool={setActiveTool}
+                    onAddShape={handleAddShape} 
+                    onOpenAI={() => setIsAIModalOpen(true)}
+                    showDimensions={showDimensions}
+                    onToggleDimensions={() => setShowDimensions(!showDimensions)}
+                    isSidebarOpen={isRightPanelOpen}
+                    onToggleSidebar={() => setIsRightPanelOpen(!isRightPanelOpen)}
+                    unit={unit}
+                    onUnitChange={setUnit}
+                    onClosePalette={() => setIsPaletteVisible(false)}
+                />
+            ) : (
+                <button 
+                    onClick={() => setIsPaletteVisible(true)}
+                    className="absolute top-4 left-4 z-50 p-2 bg-slate-800 rounded-lg border border-slate-700 hover:bg-slate-700 text-slate-300 shadow-xl"
+                    title="Show Tools"
+                >
+                    <Wrench size={20} />
+                </button>
+            )}
 
             <Canvas 
                 shapes={shapes}
@@ -185,6 +201,7 @@ const App: React.FC = () => {
                 onDeleteShapes={handleDeleteShapes}
                 showDimensions={showDimensions}
                 onAddShapeFromPen={handleAddShapeFromPen}
+                unit={unit}
             />
         </div>
 
@@ -206,6 +223,7 @@ const App: React.FC = () => {
                 onUpdateShapes={handleUpdateShapes}
                 onDelete={handleDeleteShapes}
                 onClose={() => setIsRightPanelOpen(false)}
+                unit={unit}
             />
             <div className="p-4 border-t border-slate-700 mt-auto">
                 <h4 className="text-xs font-semibold text-slate-400 mb-2">Machine Settings (Global)</h4>
@@ -221,13 +239,12 @@ const App: React.FC = () => {
             code={gcode} 
             onChange={handleCodeChange} 
             onRegenerate={handleRegenerate}
-            // onExplain={handleExplainCode}
             isManualMode={isManualMode}
           />
         </div>
       </main>
 
-      
+
     </div>
   );
 };

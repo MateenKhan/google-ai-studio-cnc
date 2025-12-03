@@ -1,5 +1,5 @@
-import React from 'react';
-import { Download, RefreshCw, MessageSquare } from 'lucide-react';
+import React, { useState } from 'react';
+import { Download, RefreshCw, MessageSquare, Copy, Check } from 'lucide-react';
 
 interface CodeEditorProps {
   code: string;
@@ -10,6 +10,8 @@ interface CodeEditorProps {
 }
 
 const CodeEditor: React.FC<CodeEditorProps> = ({ code, onChange, onRegenerate, onExplain, isManualMode }) => {
+  const [copied, setCopied] = useState(false);
+
   const handleDownload = () => {
     const blob = new Blob([code], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
@@ -20,11 +22,24 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ code, onChange, onRegenerate, o
     URL.revokeObjectURL(url);
   };
 
+  const handleCopy = () => {
+    navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <div className="flex-1 flex flex-col bg-slate-950 border-l border-slate-800 min-w-[300px]">
       <div className="flex items-center justify-between px-4 py-2 border-b border-slate-800 bg-slate-900">
         <h3 className="font-semibold text-slate-200">G-Code</h3>
         <div className="flex gap-2">
+            <button 
+                onClick={handleCopy} 
+                className="p-1.5 text-slate-400 hover:text-green-400 hover:bg-slate-800 rounded transition-colors"
+                title="Copy to Clipboard"
+            >
+                {copied ? <Check size={16} /> : <Copy size={16} />}
+            </button>
             <button 
                 onClick={onExplain} 
                 className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded transition-colors"

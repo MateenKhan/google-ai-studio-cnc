@@ -1,7 +1,8 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { Shape, ShapeType, RectangleShape, CircleShape, TextShape, Tool, HeartShape, LineShape, PolylineShape } from '../types';
+import React, { useRef, useState } from 'react';
+import { Shape, ShapeType, RectangleShape, CircleShape, TextShape, Tool, HeartShape, LineShape, PolylineShape, Unit } from '../types';
 import { Trash2 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
+import { formatUnit } from '../utils';
 
 interface CanvasProps {
   shapes: Shape[];
@@ -14,6 +15,7 @@ interface CanvasProps {
   onDeleteShapes: (ids: string[]) => void;
   showDimensions: boolean;
   onAddShapeFromPen: (shape: Shape) => void;
+  unit: Unit;
 }
 
 const Canvas: React.FC<CanvasProps> = ({ 
@@ -26,7 +28,8 @@ const Canvas: React.FC<CanvasProps> = ({
     selectedIds, 
     onDeleteShapes,
     showDimensions,
-    onAddShapeFromPen
+    onAddShapeFromPen,
+    unit
 }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -79,7 +82,7 @@ const Canvas: React.FC<CanvasProps> = ({
         const newShape: PolylineShape = {
             id: uuidv4(),
             type: ShapeType.POLYLINE,
-            x: 0, y: 0, // Not strictly used for polyline absolute points, but good for base
+            x: 0, y: 0, 
             points: [{ x: point.x, y: point.y }]
         };
         setCurrentPolyline(newShape);
@@ -172,7 +175,6 @@ const Canvas: React.FC<CanvasProps> = ({
             if (shape) {
                 if (shape.type === ShapeType.LINE) {
                     const l = shape as LineShape;
-                    // For Line, we need to update x2/y2 as well to maintain length/orientation
                     const diffX = l.x2 - l.x;
                     const diffY = l.y2 - l.y;
                     const newX = Math.round(initialPos.x + dx);
@@ -185,18 +187,7 @@ const Canvas: React.FC<CanvasProps> = ({
                         y2: newY + diffY
                     } as LineShape);
                 } else if (shape.type === ShapeType.POLYLINE) {
-                     // For Polyline, shift all points
-                     const p = shape as PolylineShape;
-                     // We need initial points. 
-                     // IMPORTANT: To simplify, we just shift x/y base for Polyline if it used relative coords,
-                     // but our polyline uses absolute points.
-                     // Real fix: Move all points by delta.
-                     // Since we only cached 'x/y', we need a better strategy for Polyline or accept offset drift.
-                     // Let's iterate points.
-                     // For this demo, let's just update the cached 'x' and 'y' properties which are technically unused for rendering points directly
-                     // but might be used for positioning.
-                     // Actually, let's skip complex polyline dragging for now or implement properly later.
-                     // Update: Just skipping polyline drag logic update to avoid breaking points.
+                     // Skipping polyline point drags for simplicity
                 } else {
                     updates.push({
                         ...shape,
@@ -249,8 +240,7 @@ const Canvas: React.FC<CanvasProps> = ({
              const maxY = Math.max(s.y, s.y2);
              shapeRect = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
          }
-         // Skip Polyline marquee select for now
-
+         
          const x_overlap = Math.max(0, Math.min(rect.x + rect.width, shapeRect.x + shapeRect.width) - Math.max(rect.x, shapeRect.x));
          const y_overlap = Math.max(0, Math.min(rect.y + rect.height, shapeRect.y + shapeRect.height) - Math.max(rect.y, shapeRect.y));
          
@@ -287,11 +277,6 @@ const Canvas: React.FC<CanvasProps> = ({
   };
 
   const renderHeartPath = (s: HeartShape) => {
-      // Basic parametric approximation drawn as path
-      // x = 16 sin^3 t, y = 13 cos t - 5 cos 2t - 2 cos 3t - cos 4t
-      // We need to generate a path string.
-      // Simplify: 4 Bezier curves or just points.
-      // Let's use a points string for <polygon> or <path>
       let d = "";
       const steps = 30;
       for(let i=0; i<=steps; i++) {
@@ -303,7 +288,7 @@ const Canvas: React.FC<CanvasProps> = ({
           const scaleY = s.height / 30;
           
           const px = s.x + (hx * scaleX);
-          const py = s.y - (hy * scaleY); // Invert Y
+          const py = s.y - (hy * scaleY); 
           
           d += (i===0 ? "M" : "L") + ` ${px} ${py} `;
       }
@@ -311,44 +296,43 @@ const Canvas: React.FC<CanvasProps> = ({
       return d;
   };
 
-  // Helper for Dimension Lines
   const renderDimensions = (shape: Shape) => {
-      // Use bright colors to stand out against slate background
-      const dimColor = "#22d3ee"; // Cyan-400
-      const strokeWidth = 1.5;
+      const dimColor = "#22d3ee"; 
+      const strokeWidth = 1.5 / (unit === Unit.MM ? 1 : (unit === Unit.INCH ? 0.04 : 0.003)); // Scale stroke visually? No, just fixed.
       const textStyle = { fill: "#e2e8f0", fontSize: 12, fontFamily: "sans-serif", fontWeight: "bold" };
       const bgStyle = { fill: "rgba(15, 23, 42, 0.7)" };
 
       if (shape.type === ShapeType.RECTANGLE) {
           const s = shape as RectangleShape;
+          const widthLabel = formatUnit(s.width, unit);
+          const heightLabel = formatUnit(s.height, unit);
+
           return (
               <g pointerEvents="none" className="select-none">
-                  {/* Width Dimension (Top) */}
-                  <line x1={s.x} y1={s.y - 15} x2={s.x + s.width} y2={s.y - 15} stroke={dimColor} strokeWidth={strokeWidth} markerEnd="url(#arrow)" markerStart="url(#arrow-start)" />
+                  <line x1={s.x} y1={s.y - 15} x2={s.x + s.width} y2={s.y - 15} stroke={dimColor} strokeWidth={1.5} markerEnd="url(#arrow)" markerStart="url(#arrow-start)" />
                   <line x1={s.x} y1={s.y} x2={s.x} y2={s.y - 20} stroke={dimColor} strokeWidth="0.5" strokeDasharray="2 2"/>
                   <line x1={s.x + s.width} y1={s.y} x2={s.x + s.width} y2={s.y - 20} stroke={dimColor} strokeWidth="0.5" strokeDasharray="2 2"/>
                   
-                  <rect x={s.x + s.width / 2 - 20} y={s.y - 28} width="40" height="14" rx="2" {...bgStyle} />
-                  <text x={s.x + s.width / 2} y={s.y - 19} textAnchor="middle" {...textStyle}>{s.width}mm</text>
+                  <rect x={s.x + s.width / 2 - 25} y={s.y - 28} width="50" height="14" rx="2" {...bgStyle} />
+                  <text x={s.x + s.width / 2} y={s.y - 19} textAnchor="middle" {...textStyle}>{widthLabel}</text>
                   
-                  {/* Height Dimension (Left) */}
-                  <line x1={s.x - 15} y1={s.y} x2={s.x - 15} y2={s.y + s.height} stroke={dimColor} strokeWidth={strokeWidth} markerEnd="url(#arrow)" markerStart="url(#arrow-start)" />
+                  <line x1={s.x - 15} y1={s.y} x2={s.x - 15} y2={s.y + s.height} stroke={dimColor} strokeWidth={1.5} markerEnd="url(#arrow)" markerStart="url(#arrow-start)" />
                   <line x1={s.x} y1={s.y} x2={s.x - 20} y2={s.y} stroke={dimColor} strokeWidth="0.5" strokeDasharray="2 2"/>
                   <line x1={s.x} y1={s.y + s.height} x2={s.x - 20} y2={s.y + s.height} stroke={dimColor} strokeWidth="0.5" strokeDasharray="2 2"/>
 
-                  <rect x={s.x - 55} y={s.y + s.height / 2 - 7} width="40" height="14" rx="2" {...bgStyle} />
-                  <text x={s.x - 35} y={s.y + s.height / 2 + 4} textAnchor="middle" {...textStyle}>{s.height}mm</text>
+                  <rect x={s.x - 65} y={s.y + s.height / 2 - 7} width="50" height="14" rx="2" {...bgStyle} />
+                  <text x={s.x - 40} y={s.y + s.height / 2 + 4} textAnchor="middle" {...textStyle}>{heightLabel}</text>
               </g>
           );
       }
       if (shape.type === ShapeType.CIRCLE) {
           const s = shape as CircleShape;
+          const radiusLabel = `R${formatUnit(s.radius, unit)}`;
            return (
               <g pointerEvents="none" className="select-none">
-                  {/* Radius Dimension */}
-                  <line x1={s.x} y1={s.y} x2={s.x + s.radius} y2={s.y} stroke={dimColor} strokeWidth={strokeWidth} markerEnd="url(#arrow)" />
-                  <rect x={s.x + s.radius / 2 - 15} y={s.y - 18} width="30" height="14" rx="2" {...bgStyle} />
-                  <text x={s.x + s.radius / 2} y={s.y - 7} textAnchor="middle" {...textStyle}>R{s.radius}</text>
+                  <line x1={s.x} y1={s.y} x2={s.x + s.radius} y2={s.y} stroke={dimColor} strokeWidth={1.5} markerEnd="url(#arrow)" />
+                  <rect x={s.x + s.radius / 2 - 20} y={s.y - 18} width="40" height="14" rx="2" {...bgStyle} />
+                  <text x={s.x + s.radius / 2} y={s.y - 7} textAnchor="middle" {...textStyle}>{radiusLabel}</text>
               </g>
           );
       }
@@ -494,7 +478,7 @@ const Canvas: React.FC<CanvasProps> = ({
            return null;
         })}
 
-        {/* Dimensions Layer - Rendered on top of everything, only for selected items */}
+        {/* Dimensions Layer */}
         {showDimensions && shapes.map(shape => {
             if (!selectedIds.includes(shape.id)) return null;
             return (

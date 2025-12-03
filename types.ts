@@ -13,6 +13,12 @@ export enum Tool {
   PEN = 'PEN',
 }
 
+export enum Unit {
+  MM = 'mm',
+  INCH = 'in',
+  FEET = 'ft',
+}
+
 export interface BaseShape {
   id: string;
   type: ShapeType;

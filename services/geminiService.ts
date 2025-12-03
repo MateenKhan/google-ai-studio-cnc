@@ -20,9 +20,11 @@
         
 //         User Request: "${userPrompt}"
         
-//         Generate a list of simple geometric shapes (Rectangle, Circle, Text) to fulfill the request.
+//         Generate a list of simple geometric shapes (Rectangle, Circle, Text, Heart, Line) to fulfill the request.
 //         Coordinates are in millimeters. 
 //         Assume the workspace is 500x500mm.
+//         For Hearts, x and y are the center.
+//         For Lines, provide x,y (start) and x2,y2 (end).
 //         Return ONLY the new list of shapes including any old ones if they should be kept (or modified).
 //         Do not remove existing shapes unless explicitly asked.
 //         Ensure IDs are unique strings.
@@ -35,14 +37,18 @@
 //             type: Type.OBJECT,
 //             properties: {
 //               id: { type: Type.STRING },
-//               type: { type: Type.STRING, enum: [ShapeType.RECTANGLE, ShapeType.CIRCLE, ShapeType.TEXT] },
+//               type: { type: Type.STRING, enum: [ShapeType.RECTANGLE, ShapeType.CIRCLE, ShapeType.TEXT, ShapeType.HEART, ShapeType.LINE] },
 //               x: { type: Type.NUMBER },
 //               y: { type: Type.NUMBER },
 //               width: { type: Type.NUMBER, nullable: true },
 //               height: { type: Type.NUMBER, nullable: true },
 //               radius: { type: Type.NUMBER, nullable: true },
+//               x2: { type: Type.NUMBER, nullable: true },
+//               y2: { type: Type.NUMBER, nullable: true },
 //               text: { type: Type.STRING, nullable: true },
 //               fontSize: { type: Type.NUMBER, nullable: true },
+//               fontFamily: { type: Type.STRING, nullable: true },
+//               letterSpacing: { type: Type.NUMBER, nullable: true },
 //             },
 //             required: ["id", "type", "x", "y"],
 //           },

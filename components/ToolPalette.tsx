@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Square, Circle, Type, Wand2, MousePointer2, Hand, Ruler, Heart, Pen, Minus, GripHorizontal, Menu, LayoutTemplate } from 'lucide-react';
-import { ShapeType, Tool } from '../types';
+import { Square, Circle, Type, Wand2, MousePointer2, Hand, Ruler, Heart, Pen, Minus, GripHorizontal, LayoutTemplate, X, ChevronDown } from 'lucide-react';
+import { ShapeType, Tool, Unit } from '../types';
 
 interface ToolPaletteProps {
   activeTool: Tool;
@@ -11,6 +11,9 @@ interface ToolPaletteProps {
   onToggleDimensions: () => void;
   isSidebarOpen: boolean;
   onToggleSidebar: () => void;
+  unit: Unit;
+  onUnitChange: (unit: Unit) => void;
+  onClosePalette: () => void;
 }
 
 const ToolPalette: React.FC<ToolPaletteProps> = ({ 
@@ -21,7 +24,10 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
     showDimensions,
     onToggleDimensions,
     isSidebarOpen,
-    onToggleSidebar
+    onToggleSidebar,
+    unit,
+    onUnitChange,
+    onClosePalette
 }) => {
   const [position, setPosition] = useState({ x: 20, y: 20 });
   const [isMobile, setIsMobile] = useState(false);
@@ -79,14 +85,35 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
         `}
         style={!isMobile ? { left: position.x, top: position.y } : {}}
     >
-      {/* Drag Handle (Desktop Only) */}
+      {/* Drag Handle & Controls (Desktop Only) */}
       <div 
-        className="hidden md:flex h-6 bg-slate-800 items-center justify-center cursor-move border-b border-slate-700 shrink-0"
+        className="hidden md:flex h-8 bg-slate-800 items-center justify-between cursor-move border-b border-slate-700 shrink-0 px-2"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
       >
           <GripHorizontal size={14} className="text-slate-500" />
+          <div className="flex items-center gap-1">
+             <div className="relative group">
+                 <button className="text-[10px] font-bold bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded flex items-center gap-0.5 hover:bg-slate-600">
+                    {unit.toUpperCase()} <ChevronDown size={10} />
+                 </button>
+                 <div className="absolute right-0 top-full mt-1 bg-slate-800 border border-slate-700 rounded shadow-xl hidden group-hover:block w-16 overflow-hidden">
+                     {Object.values(Unit).map(u => (
+                         <button 
+                           key={u}
+                           onClick={() => onUnitChange(u)}
+                           className={`w-full text-left px-2 py-1 text-xs hover:bg-slate-700 ${unit === u ? 'text-sky-400' : 'text-slate-400'}`}
+                         >
+                            {u.toUpperCase()}
+                         </button>
+                     ))}
+                 </div>
+             </div>
+             <button onPointerDown={(e) => e.stopPropagation()} onClick={onClosePalette} className="text-slate-500 hover:text-red-400 p-0.5">
+                <X size={14} />
+             </button>
+          </div>
       </div>
 
       <div className="flex md:grid md:grid-cols-4 gap-2 md:p-3 overflow-y-auto items-center md:items-stretch">

@@ -1,6 +1,7 @@
 import React from 'react';
-import { Shape, ShapeType, RectangleShape, CircleShape, TextShape, HeartShape, LineShape } from '../types';
+import { Shape, ShapeType, RectangleShape, CircleShape, TextShape, HeartShape, LineShape, Unit } from '../types';
 import { Layers, Trash2, X } from 'lucide-react';
+import { fromMm, toMm } from '../utils';
 
 interface PropertiesPanelProps {
   selectedShapes: Shape[];
@@ -8,9 +9,10 @@ interface PropertiesPanelProps {
   onUpdateShapes: (updatedShapes: Shape[]) => void;
   onDelete: (ids: string[]) => void;
   onClose: () => void;
+  unit: Unit;
 }
 
-const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedShapes, onUpdateShape, onUpdateShapes, onDelete, onClose }) => {
+const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedShapes, onUpdateShape, onUpdateShapes, onDelete, onClose, unit }) => {
   if (selectedShapes.length === 0) {
     return (
       <div className="p-4 flex flex-col h-full relative">
@@ -26,28 +28,37 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedShapes, onUpd
     );
   }
 
-  // Common change handler for single and multi-select
-  const handleCommonChange = (field: keyof Shape, value: any) => {
+  // Unit Converters
+  const displayVal = (val: number | undefined) => {
+    if (val === undefined) return '';
+    return parseFloat(fromMm(val, unit).toFixed(3));
+  };
+
+  const handleValChange = (field: string, valStr: string) => {
+    const val = parseFloat(valStr);
+    if (isNaN(val)) return;
+    const mmVal = toMm(val, unit);
+    
     const updates = selectedShapes.map(shape => ({
       ...shape,
-      [field]: value
-    }));
+      [field]: mmVal
+    })) as Shape[];
     onUpdateShapes(updates);
   };
 
   // Helper to check if a property value is mixed among selected shapes
-  const getCommonValue = (field: keyof Shape) => {
+  const getCommonValue = (field: string): number | '' => {
     if (selectedShapes.length === 0) return '';
-    const firstVal = selectedShapes[0][field];
-    const allSame = selectedShapes.every(s => s[field] === firstVal);
-    return allSame ? firstVal : '';
+    const firstVal = (selectedShapes[0] as any)[field];
+    const allSame = selectedShapes.every(s => (s as any)[field] === firstVal);
+    // @ts-ignore
+    return allSame ? displayVal(firstVal) : '';
   };
 
-  // Helper to get placeholder for mixed values
-  const getPlaceholder = (field: keyof Shape) => {
+  const getPlaceholder = (field: string) => {
     if (selectedShapes.length === 0) return '';
-    const firstVal = selectedShapes[0][field];
-    const allSame = selectedShapes.every(s => s[field] === firstVal);
+    const firstVal = (selectedShapes[0] as any)[field];
+    const allSame = selectedShapes.every(s => (s as any)[field] === firstVal);
     return allSame ? '' : 'Mixed';
   };
 
@@ -63,7 +74,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedShapes, onUpd
             <X size={20} />
        </button>
       <h3 className="text-slate-100 font-semibold border-b border-slate-700 pb-2 flex justify-between items-center pr-8">
-        <span>Properties</span>
+        <span>Properties <span className="text-xs text-slate-500 font-normal">({unit})</span></span>
         {selectedShapes.length > 1 && (
              <span className="bg-sky-900 text-sky-200 text-xs px-2 py-0.5 rounded-full">{selectedShapes.length} Items</span>
         )}
@@ -72,22 +83,22 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedShapes, onUpd
       {/* Common Properties */}
       <div className="grid grid-cols-2 gap-2">
         <div className="flex flex-col gap-1">
-          <label className="text-xs text-slate-400">X (mm)</label>
+          <label className="text-xs text-slate-400">X</label>
           <input 
             type="number" 
             value={getCommonValue('x')}
             placeholder={getPlaceholder('x')} 
-            onChange={(e) => handleCommonChange('x', Number(e.target.value))}
+            onChange={(e) => handleValChange('x', e.target.value)}
             className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none placeholder-slate-600 italic"
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-xs text-slate-400">Y (mm)</label>
+          <label className="text-xs text-slate-400">Y</label>
           <input 
             type="number" 
             value={getCommonValue('y')}
             placeholder={getPlaceholder('y')}
-            onChange={(e) => handleCommonChange('y', Number(e.target.value))}
+            onChange={(e) => handleValChange('y', e.target.value)}
             className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none placeholder-slate-600 italic"
           />
         </div>
@@ -100,13 +111,9 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedShapes, onUpd
             <label className="text-xs text-slate-400">Width</label>
             <input 
               type="number" 
-              value={(selectedShapes[0] as RectangleShape).width} 
-              placeholder={selectedShapes.every(s => (s as RectangleShape).width === (selectedShapes[0] as RectangleShape).width) ? '' : 'Mixed'}
-              onChange={(e) => {
-                  const val = Number(e.target.value);
-                  const updates = selectedShapes.map(s => ({ ...s, width: val } as RectangleShape));
-                  onUpdateShapes(updates);
-              }}
+              value={getCommonValue('width')}
+              placeholder={getPlaceholder('width')}
+              onChange={(e) => handleValChange('width', e.target.value)}
               className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none placeholder-slate-600 italic"
             />
           </div>
@@ -114,13 +121,9 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedShapes, onUpd
             <label className="text-xs text-slate-400">Height</label>
             <input 
               type="number" 
-              value={(selectedShapes[0] as RectangleShape).height} 
-              placeholder={selectedShapes.every(s => (s as RectangleShape).height === (selectedShapes[0] as RectangleShape).height) ? '' : 'Mixed'}
-               onChange={(e) => {
-                  const val = Number(e.target.value);
-                  const updates = selectedShapes.map(s => ({ ...s, height: val } as RectangleShape));
-                  onUpdateShapes(updates);
-              }}
+              value={getCommonValue('height')}
+              placeholder={getPlaceholder('height')}
+              onChange={(e) => handleValChange('height', e.target.value)}
               className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none placeholder-slate-600 italic"
             />
           </div>
@@ -132,13 +135,9 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedShapes, onUpd
           <label className="text-xs text-slate-400">Radius</label>
           <input 
             type="number" 
-            value={(selectedShapes[0] as CircleShape).radius} 
-            placeholder={selectedShapes.every(s => (s as CircleShape).radius === (selectedShapes[0] as CircleShape).radius) ? '' : 'Mixed'}
-            onChange={(e) => {
-                const val = Number(e.target.value);
-                const updates = selectedShapes.map(s => ({ ...s, radius: val } as CircleShape));
-                onUpdateShapes(updates);
-            }}
+            value={getCommonValue('radius')} 
+            placeholder={getPlaceholder('radius')}
+            onChange={(e) => handleValChange('radius', e.target.value)}
             className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none placeholder-slate-600 italic"
           />
         </div>
@@ -150,12 +149,8 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedShapes, onUpd
                 <label className="text-xs text-slate-400">Width</label>
                 <input 
                 type="number" 
-                value={(selectedShapes[0] as HeartShape).width} 
-                onChange={(e) => {
-                    const val = Number(e.target.value);
-                    const updates = selectedShapes.map(s => ({ ...s, width: val } as HeartShape));
-                    onUpdateShapes(updates);
-                }}
+                value={getCommonValue('width')}
+                onChange={(e) => handleValChange('width', e.target.value)}
                 className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
                 />
             </div>
@@ -163,12 +158,8 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedShapes, onUpd
                 <label className="text-xs text-slate-400">Height</label>
                 <input 
                 type="number" 
-                value={(selectedShapes[0] as HeartShape).height} 
-                onChange={(e) => {
-                    const val = Number(e.target.value);
-                    const updates = selectedShapes.map(s => ({ ...s, height: val } as HeartShape));
-                    onUpdateShapes(updates);
-                }}
+                value={getCommonValue('height')}
+                onChange={(e) => handleValChange('height', e.target.value)}
                 className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
                 />
             </div>
@@ -178,28 +169,20 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedShapes, onUpd
       {isAllLines && (
         <div className="grid grid-cols-2 gap-2">
             <div className="flex flex-col gap-1">
-                <label className="text-xs text-slate-400">End X (mm)</label>
+                <label className="text-xs text-slate-400">End X</label>
                 <input 
                 type="number" 
-                value={(selectedShapes[0] as LineShape).x2} 
-                onChange={(e) => {
-                    const val = Number(e.target.value);
-                    const updates = selectedShapes.map(s => ({ ...s, x2: val } as LineShape));
-                    onUpdateShapes(updates);
-                }}
+                value={getCommonValue('x2')}
+                onChange={(e) => handleValChange('x2', e.target.value)}
                 className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
                 />
             </div>
             <div className="flex flex-col gap-1">
-                <label className="text-xs text-slate-400">End Y (mm)</label>
+                <label className="text-xs text-slate-400">End Y</label>
                 <input 
                 type="number" 
-                value={(selectedShapes[0] as LineShape).y2} 
-                onChange={(e) => {
-                    const val = Number(e.target.value);
-                    const updates = selectedShapes.map(s => ({ ...s, y2: val } as LineShape));
-                    onUpdateShapes(updates);
-                }}
+                value={getCommonValue('y2')}
+                onChange={(e) => handleValChange('y2', e.target.value)}
                 className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
                 />
             </div>
@@ -227,28 +210,20 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedShapes, onUpd
                 <label className="text-xs text-slate-400">Font Size</label>
                 <input 
                 type="number" 
-                value={(selectedShapes[0] as TextShape).fontSize} 
-                placeholder={selectedShapes.every(s => (s as TextShape).fontSize === (selectedShapes[0] as TextShape).fontSize) ? '' : 'Mixed'}
-                onChange={(e) => {
-                    const val = Number(e.target.value);
-                    const updates = selectedShapes.map(s => ({ ...s, fontSize: val } as TextShape));
-                    onUpdateShapes(updates);
-                }}
+                value={getCommonValue('fontSize')}
+                placeholder={getPlaceholder('fontSize')}
+                onChange={(e) => handleValChange('fontSize', e.target.value)}
                 className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none placeholder-slate-600 italic"
                 />
             </div>
             <div className="flex flex-col gap-1">
-                <label className="text-xs text-slate-400">Spacing</label>
+                <label className="text-xs text-slate-400">Char Spacing</label>
                 <input 
                 type="number" 
                 step="0.1"
-                value={(selectedShapes[0] as TextShape).letterSpacing || 0} 
-                placeholder={selectedShapes.every(s => (s as TextShape).letterSpacing === (selectedShapes[0] as TextShape).letterSpacing) ? '' : 'Mixed'}
-                onChange={(e) => {
-                    const val = Number(e.target.value);
-                    const updates = selectedShapes.map(s => ({ ...s, letterSpacing: val } as TextShape));
-                    onUpdateShapes(updates);
-                }}
+                value={getCommonValue('letterSpacing')}
+                placeholder={getPlaceholder('letterSpacing')}
+                onChange={(e) => handleValChange('letterSpacing', e.target.value)}
                 className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none placeholder-slate-600 italic"
                 />
             </div>
