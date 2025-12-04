@@ -528,10 +528,13 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                                 <>
                                     {/* X Axis - Red */}
                                     <line x1={origin.x} y1={origin.y} x2={xEnd.x} y2={xEnd.y} stroke="#ef4444" strokeWidth="2" opacity="0.8" />
+                                    <text x={xEnd.x} y={xEnd.y} fill="#ef4444" fontSize="12" fontWeight="bold" dx="5" dy="5">X</text>
                                     {/* Y Axis - Green */}
                                     <line x1={origin.x} y1={origin.y} x2={yEnd.x} y2={yEnd.y} stroke="#22c55e" strokeWidth="2" opacity="0.8" />
+                                    <text x={yEnd.x} y={yEnd.y} fill="#22c55e" fontSize="12" fontWeight="bold" dx="5" dy="5">Y</text>
                                     {/* Z Axis - Blue */}
                                     <line x1={origin.x} y1={origin.y} x2={zEnd.x} y2={zEnd.y} stroke="#3b82f6" strokeWidth="2" opacity="0.8" />
+                                    <text x={zEnd.x} y={zEnd.y} fill="#3b82f6" fontSize="12" fontWeight="bold" dx="5" dy="5">Z</text>
                                     {/* Origin Point */}
                                     <circle cx={origin.x} cy={origin.y} r="3" fill="#fbbf24" stroke="#fff" strokeWidth="1" />
                                 </>
