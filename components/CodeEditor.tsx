@@ -1,5 +1,4 @@
-
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Download, RefreshCw, Copy, Check, Filter, Upload } from 'lucide-react';
 import Ripple from './Ripple';
 
@@ -10,6 +9,7 @@ interface CodeEditorProps {
   isManualMode: boolean;
   generateOnlySelected?: boolean;
   onToggleGenerateOnlySelected?: () => void;
+  onCursorPositionChange?: (lineNumber: number) => void;
 }
 
 const CodeEditor: React.FC<CodeEditorProps> = ({ 
@@ -18,10 +18,35 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
     onRegenerate, 
     isManualMode,
     generateOnlySelected,
-    onToggleGenerateOnlySelected
+    onToggleGenerateOnlySelected,
+    onCursorPositionChange
 }) => {
   const [copied, setCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Track cursor position
+  useEffect(() => {
+    const handleCursorChange = () => {
+      if (textareaRef.current && onCursorPositionChange) {
+        const textarea = textareaRef.current;
+        const cursorPosition = textarea.selectionStart;
+        const textBeforeCursor = textarea.value.substring(0, cursorPosition);
+        const lineNumber = textBeforeCursor.split('\n').length;
+        onCursorPositionChange(lineNumber);
+      }
+    };
+
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.addEventListener('keyup', handleCursorChange);
+      textarea.addEventListener('click', handleCursorChange);
+      return () => {
+        textarea.removeEventListener('keyup', handleCursorChange);
+        textarea.removeEventListener('click', handleCursorChange);
+      };
+    }
+  }, [onCursorPositionChange]);
 
   const handleDownload = () => {
     const blob = new Blob([code], { type: 'text/plain' });
@@ -103,6 +128,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
       )}
 
       <textarea
+        ref={textareaRef}
         value={code}
         onChange={(e) => onChange(e.target.value)}
         className="flex-1 bg-slate-950 text-slate-300 p-4 font-mono text-xs resize-none outline-none leading-relaxed overflow-auto custom-scrollbar"

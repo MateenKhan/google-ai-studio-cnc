@@ -36,6 +36,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     const [selectedLineIndex, setSelectedLineIndex] = useState<number | null>(null);
     const [selectedSegmentIndices, setSelectedSegmentIndices] = useState<number[]>([]);
     const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null);
+    const [cursorLineIndex, setCursorLineIndex] = useState<number | null>(null);
 
     // Fullscreen
     const [isFullscreen, setIsFullscreen] = useState(false);
@@ -209,6 +210,12 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
         if (!isTopView) {
             setRotation({ x: 90, z: 0 });
         }
+    };
+
+    const handleCursorPositionChange = (lineNumber: number) => {
+        // Convert from 1-based line number to 0-based index
+        const lineIndex = lineNumber - 1;
+        setCursorLineIndex(lineIndex);
     };
 
     const getPointAtProgress = (prog: number) => {
@@ -497,6 +504,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                     <g>
                         {segments.map((segment, idx) => {
                             const isSelected = selectedSegmentIndices.includes(idx);
+                            const isHighlighted = cursorLineIndex !== null && segment.lineIndex === cursorLineIndex;
                             const p1 = project(segment.x1, segment.y1, segment.z1);
                             const p2 = project(segment.x2, segment.y2, segment.z2);
                             return (
@@ -506,9 +514,17 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                                     y1={p1.y}
                                     x2={p2.x}
                                     y2={p2.y}
-                                    stroke={isSelected ? "#fbbf24" : segment.type === 'G0' ? "#60a5fa" : "#34d399"}
-                                    strokeWidth={isSelected ? 2 : 1}
-                                    opacity={isSelected ? 1 : 0.7}
+                                    stroke={
+                                        isHighlighted 
+                                            ? "#fbbf24" // Yellow for cursor-highlighted
+                                            : isSelected 
+                                                ? "#fbbf24" // Yellow for selected
+                                                : segment.type === 'G0' 
+                                                    ? "#60a5fa" // Blue for G0 moves
+                                                    : "#34d399" // Green for G1+ moves
+                                    }
+                                    strokeWidth={isHighlighted || isSelected ? 3 : 1}
+                                    opacity={isHighlighted || isSelected ? 1 : 0.7}
                                     className="cursor-pointer"
                                     onClick={(e) => {
                                         e.stopPropagation();
@@ -595,6 +611,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                             isManualMode={isManualMode || false}
                             generateOnlySelected={generateOnlySelected}
                             onToggleGenerateOnlySelected={onToggleGenerateOnlySelected}
+                            onCursorPositionChange={handleCursorPositionChange}
                         />
                     </div>
                 </div>
