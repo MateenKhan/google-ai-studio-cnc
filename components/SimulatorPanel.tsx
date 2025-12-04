@@ -28,6 +28,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
 
     // Fullscreen
     const [isFloating, setIsFloating] = useState(false);
+    const [isFullscreen, setIsFullscreen] = useState(false);
     const [isMinimized, setIsMinimized] = useState(false);
     const [position, setPosition] = useState({ x: 100, y: 100 });
     const [size, setSize] = useState({ width: 600, height: 400 });
@@ -347,8 +348,32 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
 
     const toggleFloating = () => {
         setIsFloating(!isFloating);
-        // Reset position if docking back or popping out?
-        // Keep simple for now
+    };
+
+    const wrapperRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleFullscreenChange = () => {
+            setIsFullscreen(!!document.fullscreenElement);
+        };
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    }, []);
+
+    const toggleFullscreen = async () => {
+        if (!wrapperRef.current) return;
+
+        if (!document.fullscreenElement) {
+            try {
+                await wrapperRef.current.requestFullscreen();
+            } catch (err) {
+                console.error("Error attempting to enable fullscreen:", err);
+            }
+        } else {
+            if (document.exitFullscreen) {
+                await document.exitFullscreen();
+            }
+        }
     };
 
     // Keyboard delete support
@@ -391,8 +416,9 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
 
     const content = (
         <div
-            className={`flex flex-col bg-slate-900 w-full shadow-2xl border border-slate-700 ${isFloating ? 'fixed z-[9999] rounded-lg overflow-hidden' : 'h-full relative'}`}
-            style={isFloating ? {
+            ref={wrapperRef}
+            className={`flex flex-col bg-slate-900 w-full shadow-2xl border border-slate-700 ${isFloating ? 'fixed z-[9999] rounded-lg overflow-hidden' : 'h-full relative'} ${isFullscreen ? 'fixed inset-0 z-[10000] w-screen h-screen rounded-none' : ''}`}
+            style={isFloating && !isFullscreen ? {
                 left: position.x,
                 top: position.y,
                 width: size.width,
@@ -401,7 +427,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
         >
             <div
                 ref={headerRef}
-                className={`p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800 shrink-0 ${isFloating ? 'cursor-move' : ''}`}
+                className={`p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800 shrink-0 ${isFloating && !isFullscreen ? 'cursor-move' : ''}`}
             >
                 <h2 className="font-bold text-slate-100 flex items-center gap-2 select-none">
                     <Play size={18} /> Simulator & Job
@@ -421,6 +447,9 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                     </button>
                     <button onClick={() => setViewMode(v => v === '3D' ? '2D' : '3D')} className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-700 rounded" title="Toggle 3D/2D">
                         {viewMode === '3D' ? <Square size={16} /> : <Rotate3d size={16} />}
+                    </button>
+                    <button onClick={toggleFullscreen} className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-700 rounded" title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}>
+                        {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
                     </button>
                     <button onClick={toggleFloating} className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-700 rounded" title={isFloating ? "Dock" : "Popout"}>
                         {isFloating ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
@@ -444,7 +473,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                         onPointerUp={handlePointerUp}
                         onContextMenu={e => e.preventDefault()}
                         onWheel={handleWheel}
-                        style={isFloating ? { height: size.height - 130 } : {}}
+                        style={isFloating && !isFullscreen ? { height: size.height - 130 } : {}}
                     >
                         <svg
                             viewBox={viewBox}
