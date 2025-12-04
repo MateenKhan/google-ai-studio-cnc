@@ -22,6 +22,7 @@ interface SimulatorPanelProps {
 
 const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, onClose, machineStatus, isConnected, isManualMode, onRegenerate, generateOnlySelected, onToggleGenerateOnlySelected }) => {
     const [viewMode, setViewMode] = useState<'3D' | '2D'>('3D');
+    const [isTopView, setIsTopView] = useState(false);
     const [zoom, setZoom] = useState(1);
     const [pan, setPan] = useState({ x: 0, y: 0 });
     const [rotation, setRotation] = useState({ x: 60, z: 45 }); // Degrees
@@ -202,6 +203,14 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
         setSimProgress(0);
     };
 
+    const toggleTopView = () => {
+        setIsTopView(!isTopView);
+        // When entering top view, set rotation to look directly down
+        if (!isTopView) {
+            setRotation({ x: 90, z: 0 });
+        }
+    };
+
     const getPointAtProgress = (prog: number) => {
         if (segments.length === 0) return { x: 0, y: 0, z: 0 };
         const targetDist = prog * totalLength;
@@ -227,6 +236,11 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
         const cx = x - centerOfBounds.x;
         const cy = y - centerOfBounds.y;
         const cz = z - centerOfBounds.z;
+
+        // Top view mode - look directly down from above
+        if (isTopView) {
+            return { x: cx, y: -cy };
+        }
 
         if (viewMode === '2D') {
             return { x: cx, y: -cy };
@@ -256,12 +270,25 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
 
     // Interactive Controls
     const handlePointerDown = (e: React.PointerEvent) => {
-        // Don't handle pointer events when in fullscreen mode
+        // Allow clicking on SVG elements even in fullscreen mode
+        // Check if the target is a line element (not the SVG container itself)
+        const isLineElement = e.target instanceof SVGElement && e.target.tagName === 'line';
+        
+        // If clicking on a line element, allow the event to propagate to the line's onClick handler
+        if (isFullscreen && isLineElement) {
+            return;
+        }
+        
+        // For all other interactions in fullscreen mode, prevent drag/pan
         if (isFullscreen) return;
         
         e.currentTarget.setPointerCapture(e.pointerId);
         isDraggingRef.current = true;
         lastMousePosRef.current = { x: e.clientX, y: e.clientY };
+        
+        // Set drag mode based on mouse button:
+        // - Right mouse button (2) or Middle mouse button (1): PAN mode
+        // - Left mouse button (0): ROTATE mode (in 3D view) or PAN mode (in 2D view)
         if (e.button === 2 || e.button === 1) {
             dragModeRef.current = 'PAN';
         } else {
@@ -270,7 +297,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     };
 
     const handlePointerMove = (e: React.PointerEvent) => {
-        // Don't handle pointer events when in fullscreen mode
+        // Don't handle drag/pan events when in fullscreen mode
         if (isFullscreen) return;
         
         if (!isDraggingRef.current) return;
@@ -292,7 +319,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     };
 
     const handlePointerUp = (e: React.PointerEvent) => {
-        // Don't handle pointer events when in fullscreen mode
+        // Don't handle drag/pan events when in fullscreen mode
         if (isFullscreen) return;
         
         isDraggingRef.current = false;
@@ -433,6 +460,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                     <Rotate3d size={18} /> Simulator
                 </h2>
                 <div className="flex gap-2">
+                    <Ripple><button onClick={toggleTopView} className={`p-1 ${isTopView ? 'text-sky-400 bg-sky-900/30' : 'text-slate-400 hover:text-white'}`} title="Toggle Top View">2D</button></Ripple>
                     <Ripple><button onClick={toggleFullscreen} className="text-slate-400 hover:text-white">{isFullscreen ? <Shrink size={18} /> : <Expand size={18} />}</button></Ripple>
                     <Ripple><button onClick={onClose} className="text-slate-400 hover:text-white"><X size={18} /></button></Ripple>
                 </div>
@@ -534,74 +562,40 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                 )}
             </div>
 
-            {/* Simulation Controls Accordion */}
-            <div className="bg-slate-800 border-t border-slate-700 shrink-0 z-20">
+            {/* G-Code Accordion Section */}
+            <div className="bg-slate-900 border-t border-slate-800 shrink-0">
                 <Ripple>
                     <button
-                        onClick={() => setIsSimulationExpanded(!isSimulationExpanded)}
-                        className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-700/50 transition-colors cursor-pointer"
-                        aria-expanded={isSimulationExpanded}
-                        aria-controls="simulation-accordion-content"
+                        onClick={() => setIsGCodeExpanded(!isGCodeExpanded)}
+                        className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-800/50 transition-colors cursor-pointer"
+                        aria-expanded={isGCodeExpanded}
+                        aria-controls="gcode-accordion-content"
                     >
                         <h3 className="text-sm font-semibold text-slate-300 uppercase flex items-center gap-2">
-                            {isSimulationExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                            Simulation Controls
+                            {isGCodeExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                            G-Code Editor
                         </h3>
+                        {isManualMode && (
+                            <span className="text-xs text-yellow-500 bg-yellow-900/20 px-2 py-1 rounded">Manual Mode</span>
+                        )}
                     </button>
                 </Ripple>
                 <div
-                    id="simulation-accordion-content"
+                    id="gcode-accordion-content"
                     className="overflow-hidden transition-all duration-300 ease-in-out"
                     style={{
-                        maxHeight: isSimulationExpanded ? '200px' : '0px'
+                        maxHeight: isGCodeExpanded ? '600px' : '0px'
                     }}
                 >
-                    <div className="border-t border-slate-700 p-2 flex items-center gap-4 px-4">
-                        <Ripple>
-                            <button
-                                onClick={handleToggleSimulation}
-                                className={`p-2 rounded-full ${isSimulating ? 'bg-yellow-600 text-white' : 'bg-sky-600 text-white'} hover:opacity-90`}
-                            >
-                                {isSimulating ? <Pause size={16} /> : <Play size={16} />}
-                            </button>
-                        </Ripple>
-                        <Ripple>
-                            <button onClick={handleSimStop} className="p-2 text-slate-400 hover:text-white">
-                                <Square size={16} />
-                            </button>
-                        </Ripple>
-
-                        <div className="flex-1 flex flex-col gap-1">
-                            <div className="flex justify-between text-xs text-slate-400">
-                                <span>Simulation Progress</span>
-                                <span>{Math.round(simProgress * 100)}%</span>
-                            </div>
-                            <input
-                                type="range"
-                                min="0" max="1" step="0.001"
-                                value={simProgress}
-                                onChange={(e) => {
-                                    setSimProgress(parseFloat(e.target.value));
-                                    setIsSimulating(false);
-                                }}
-                                className="w-full accent-sky-500 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer"
-                            />
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                            <span className="text-xs text-slate-400">Speed:</span>
-                            <select
-                                value={simSpeed}
-                                onChange={(e) => setSimSpeed(parseFloat(e.target.value))}
-                                className="bg-slate-900 border border-slate-700 text-xs text-slate-300 rounded px-1 py-1"
-                            >
-                                <option value="0.5">0.5x</option>
-                                <option value="1">1x</option>
-                                <option value="2">2x</option>
-                                <option value="5">5x</option>
-                                <option value="10">10x</option>
-                            </select>
-                        </div>
+                    <div className="border-t border-slate-800">
+                        <CodeEditor
+                            code={gcode}
+                            onChange={onUpdateGCode}
+                            onRegenerate={onRegenerate || (() => { })}
+                            isManualMode={isManualMode || false}
+                            generateOnlySelected={generateOnlySelected}
+                            onToggleGenerateOnlySelected={onToggleGenerateOnlySelected}
+                        />
                     </div>
                 </div>
             </div>
@@ -671,40 +665,74 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                 </div>
             </div>
 
-            {/* G-Code Accordion Section */}
-            <div className="bg-slate-900 border-t border-slate-800 shrink-0">
+            {/* Simulation Controls Accordion */}
+            <div className="bg-slate-800 border-t border-slate-700 shrink-0 z-20">
                 <Ripple>
                     <button
-                        onClick={() => setIsGCodeExpanded(!isGCodeExpanded)}
-                        className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-800/50 transition-colors cursor-pointer"
-                        aria-expanded={isGCodeExpanded}
-                        aria-controls="gcode-accordion-content"
+                        onClick={() => setIsSimulationExpanded(!isSimulationExpanded)}
+                        className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-700/50 transition-colors cursor-pointer"
+                        aria-expanded={isSimulationExpanded}
+                        aria-controls="simulation-accordion-content"
                     >
                         <h3 className="text-sm font-semibold text-slate-300 uppercase flex items-center gap-2">
-                            {isGCodeExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                            G-Code Editor
+                            {isSimulationExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                            Simulation Controls
                         </h3>
-                        {isManualMode && (
-                            <span className="text-xs text-yellow-500 bg-yellow-900/20 px-2 py-1 rounded">Manual Mode</span>
-                        )}
                     </button>
                 </Ripple>
                 <div
-                    id="gcode-accordion-content"
+                    id="simulation-accordion-content"
                     className="overflow-hidden transition-all duration-300 ease-in-out"
                     style={{
-                        maxHeight: isGCodeExpanded ? '400px' : '0px'
+                        maxHeight: isSimulationExpanded ? '200px' : '0px'
                     }}
                 >
-                    <div className="border-t border-slate-800">
-                        <CodeEditor
-                            code={gcode}
-                            onChange={onUpdateGCode}
-                            onRegenerate={onRegenerate || (() => { })}
-                            isManualMode={isManualMode || false}
-                            generateOnlySelected={generateOnlySelected}
-                            onToggleGenerateOnlySelected={onToggleGenerateOnlySelected}
-                        />
+                    <div className="border-t border-slate-700 p-2 flex items-center gap-4 px-4">
+                        <Ripple>
+                            <button
+                                onClick={handleToggleSimulation}
+                                className={`p-2 rounded-full ${isSimulating ? 'bg-yellow-600 text-white' : 'bg-sky-600 text-white'} hover:opacity-90`}
+                            >
+                                {isSimulating ? <Pause size={16} /> : <Play size={16} />}
+                            </button>
+                        </Ripple>
+                        <Ripple>
+                            <button onClick={handleSimStop} className="p-2 text-slate-400 hover:text-white">
+                                <Square size={16} />
+                            </button>
+                        </Ripple>
+
+                        <div className="flex-1 flex flex-col gap-1">
+                            <div className="flex justify-between text-xs text-slate-400">
+                                <span>Simulation Progress</span>
+                                <span>{Math.round(simProgress * 100)}%</span>
+                            </div>
+                            <input
+                                type="range"
+                                min="0" max="1" step="0.001"
+                                value={simProgress}
+                                onChange={(e) => {
+                                    setSimProgress(parseFloat(e.target.value));
+                                    setIsSimulating(false);
+                                }}
+                                className="w-full accent-sky-500 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                            />
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-400">Speed:</span>
+                            <select
+                                value={simSpeed}
+                                onChange={(e) => setSimSpeed(parseFloat(e.target.value))}
+                                className="bg-slate-900 border border-slate-700 text-xs text-slate-300 rounded px-1 py-1"
+                            >
+                                <option value="0.5">0.5x</option>
+                                <option value="1">1x</option>
+                                <option value="2">2x</option>
+                                <option value="5">5x</option>
+                                <option value="10">10x</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
             </div>
