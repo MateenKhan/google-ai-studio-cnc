@@ -592,7 +592,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                     id="gcode-accordion-content"
                     className="overflow-hidden transition-all duration-300 ease-in-out"
                     style={{
-                        maxHeight: isGCodeExpanded ? '600px' : '0px'
+                        maxHeight: isGCodeExpanded ? '1000px' : '0px'
                     }}
                 >
                     <div className="border-t border-slate-800">

@@ -131,7 +131,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
         ref={textareaRef}
         value={code}
         onChange={(e) => onChange(e.target.value)}
-        className="flex-1 bg-slate-950 text-slate-300 p-4 font-mono text-xs resize-none outline-none leading-relaxed overflow-auto custom-scrollbar"
+        className="flex-1 bg-slate-950 text-slate-300 p-4 font-mono text-xs resize-none outline-none leading-relaxed overflow-auto custom-scrollbar min-h-[200px]"
         spellCheck={false}
       />
     </div>
