@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Play, X, Rotate3d, Square, ZoomIn, ZoomOut, Move, Trash2, Pause, Maximize2, Minimize2, ChevronDown, ChevronRight } from 'lucide-react';
+import { Play, X, Rotate3d, Square, ZoomIn, ZoomOut, Move, Trash2, Pause, Maximize2, Minimize2, ChevronDown, ChevronRight, Expand, Shrink } from 'lucide-react';
 import { calculateGCodeBounds } from '../utils';
 import { MachineStatus } from '../types';
 import { serialService } from '../services/serialService';
@@ -26,8 +26,10 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     const [pan, setPan] = useState({ x: 0, y: 0 });
     const [rotation, setRotation] = useState({ x: 60, z: 45 }); // Degrees
 
-    // G-Code Accordion State
+    // Accordion States
     const [isGCodeExpanded, setIsGCodeExpanded] = useState(false);
+    const [isSimulationExpanded, setIsSimulationExpanded] = useState(true);
+    const [isJobControlExpanded, setIsJobControlExpanded] = useState(true);
 
     // Selection
     const [selectedLineIndex, setSelectedLineIndex] = useState<number | null>(null);
@@ -35,11 +37,8 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null);
 
     // Fullscreen
-    const [isFloating, setIsFloating] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [isMinimized, setIsMinimized] = useState(false);
-    const [position, setPosition] = useState({ x: 100, y: 100 });
-    const [size, setSize] = useState({ width: 600, height: 400 });
 
     // Job State
     const [jobProgress, setJobProgress] = useState(0);
@@ -57,7 +56,6 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     const containerRef = useRef<HTMLDivElement>(null);
     const headerRef = useRef<HTMLDivElement>(null);
     const isDraggingRef = useRef(false);
-    const isMovingWindowRef = useRef(false);
     const lastMousePosRef = useRef({ x: 0, y: 0 });
     const dragModeRef = useRef<'PAN' | 'ROTATE'>('PAN');
 
@@ -258,13 +256,9 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
 
     // Interactive Controls
     const handlePointerDown = (e: React.PointerEvent) => {
-        if (isFloating && headerRef.current && headerRef.current.contains(e.target as Node)) {
-            e.currentTarget.setPointerCapture(e.pointerId);
-            isMovingWindowRef.current = true;
-            lastMousePosRef.current = { x: e.clientX, y: e.clientY };
-            return;
-        }
-
+        // Don't handle pointer events when in fullscreen mode
+        if (isFullscreen) return;
+        
         e.currentTarget.setPointerCapture(e.pointerId);
         isDraggingRef.current = true;
         lastMousePosRef.current = { x: e.clientX, y: e.clientY };
@@ -276,14 +270,9 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     };
 
     const handlePointerMove = (e: React.PointerEvent) => {
-        if (isMovingWindowRef.current) {
-            const dx = e.clientX - lastMousePosRef.current.x;
-            const dy = e.clientY - lastMousePosRef.current.y;
-            lastMousePosRef.current = { x: e.clientX, y: e.clientY };
-            setPosition(prev => ({ x: prev.x + dx, y: prev.y + dy }));
-            return;
-        }
-
+        // Don't handle pointer events when in fullscreen mode
+        if (isFullscreen) return;
+        
         if (!isDraggingRef.current) return;
         const dx = e.clientX - lastMousePosRef.current.x;
         const dy = e.clientY - lastMousePosRef.current.y;
@@ -303,12 +292,17 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     };
 
     const handlePointerUp = (e: React.PointerEvent) => {
+        // Don't handle pointer events when in fullscreen mode
+        if (isFullscreen) return;
+        
         isDraggingRef.current = false;
-        isMovingWindowRef.current = false;
         e.currentTarget.releasePointerCapture(e.pointerId);
     };
 
     const handleWheel = (e: React.WheelEvent) => {
+        // Don't handle wheel events when in fullscreen mode
+        if (isFullscreen) return;
+        
         const zoomFactor = 1.1;
         setZoom(z => e.deltaY > 0 ? z / zoomFactor : z * zoomFactor);
     };
@@ -355,7 +349,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     };
 
     const toggleFloating = () => {
-        setIsFloating(!isFloating);
+        // Floating functionality removed
     };
 
     const wrapperRef = useRef<HTMLDivElement>(null);
@@ -399,19 +393,28 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
         return () => window.removeEventListener('keydown', onKey);
     }, [selectedLineIndex, selectedSegmentIndices, handleDeleteSegments]);
 
-    // Job Handlers
-    const handleRunJob = () => {
-        if (!gcode) return;
-        setIsJobRunning(true);
-        serialService.startJob(gcode, (curr, total) => {
-            setJobProgress(curr);
-            setJobTotal(total);
-            if (curr >= total) setIsJobRunning(false);
-        });
+    const handleRunJob = async () => {
+        if (!gcode || !isConnected) return;
+        try {
+            setIsJobRunning(true);
+            setJobProgress(0);
+            const lines = gcode.split('\n')
+                .map(l => l.trim())
+                .filter(l => l.length > 0 && !l.startsWith(';') && !l.startsWith('('));
+            setJobTotal(lines.length);
+            
+            // Using the startJob method from serialService
+            serialService.startJob(gcode, (current, total) => {
+                setJobProgress(current);
+            });
+        } catch (error) {
+            console.error('Error running job:', error);
+            setIsJobRunning(false);
+        }
     };
 
     const handlePauseJob = () => {
-        serialService.pauseJob();
+        serialService.pauseJob(); // Toggle pause/resume
     };
 
     const handleStopJob = () => {
@@ -423,209 +426,150 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     const mProj = project(parseFloat(machineStatus.pos.x), parseFloat(machineStatus.pos.y), parseFloat(machineStatus.pos.z));
 
     const content = (
-        <div
-            ref={wrapperRef}
-            className={`flex flex-col bg-slate-900 w-full shadow-2xl border border-slate-700 ${isFloating ? 'fixed z-[9999] rounded-lg overflow-hidden' : 'h-full relative'} ${isFullscreen ? 'fixed inset-0 z-[10000] w-screen h-screen rounded-none' : ''}`}
-            style={isFloating && !isFullscreen ? {
-                left: position.x,
-                top: position.y,
-                width: size.width,
-                height: isMinimized ? 'auto' : size.height
-            } : {}}
-        >
-            <div
-                ref={headerRef}
-                className={`p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800 shrink-0 ${isFloating && !isFullscreen ? 'cursor-move' : ''}`}
-            >
-                <h2 className="font-bold text-slate-100 flex items-center gap-2 select-none">
-                    <Play size={18} /> Simulator & Job
+        <div ref={wrapperRef} className={`bg-slate-900 border-l border-slate-800 flex flex-col h-full ${isMinimized ? 'hidden' : ''}`}>
+            {/* Header */}
+            <div ref={headerRef} className="flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-slate-900 cursor-move select-none">
+                <h2 className="font-bold text-slate-100 flex items-center gap-2">
+                    <Rotate3d size={18} /> Simulator
                 </h2>
-                <div className="flex gap-2" onPointerDown={e => e.stopPropagation()}>
-                    {isManualMode && (
-                        <Ripple><button
-                            onClick={onRegenerate}
-                            className="px-2 py-1 text-xs bg-yellow-600 hover:bg-yellow-500 text-white rounded flex items-center gap-1 animate-pulse"
-                            title="G-code is manually edited. Click to sync with Canvas."
-                        >
-                            <Rotate3d size={12} /> Sync
-                        </button></Ripple>
-                    )}
-                    <Ripple><button onClick={() => { setPan({ x: 0, y: 0 }); setZoom(1); }} className="p-1.5 text-slate-400 hover:text-white bg-slate-700 rounded" title="Reset View">
-                        <Move size={16} />
-                    </button></Ripple>
-                    <Ripple><button onClick={() => setViewMode(v => v === '3D' ? '2D' : '3D')} className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-700 rounded" title="Toggle 3D/2D">
-                        {viewMode === '3D' ? <Square size={16} /> : <Rotate3d size={16} />}
-                    </button></Ripple>
-                    <Ripple><button onClick={toggleFullscreen} className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-700 rounded" title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}>
-                        {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-                    </button></Ripple>
-                    <Ripple><button onClick={toggleFloating} className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-700 rounded" title={isFloating ? "Dock" : "Popout"}>
-                        {isFloating ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-                    </button></Ripple>
-                    {isFloating && (
-                        <Ripple><button onClick={() => setIsMinimized(!isMinimized)} className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-700 rounded" title={isMinimized ? "Expand" : "Minimize"}>
-                            {isMinimized ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
-                        </button></Ripple>
-                    )}
+                <div className="flex gap-2">
+                    <Ripple><button onClick={toggleFullscreen} className="text-slate-400 hover:text-white">{isFullscreen ? <Shrink size={18} /> : <Expand size={18} />}</button></Ripple>
                     <Ripple><button onClick={onClose} className="text-slate-400 hover:text-white"><X size={18} /></button></Ripple>
                 </div>
             </div>
 
-            {!isMinimized && (
-                <>
-                    <div
-                        ref={containerRef}
-                        className={`flex-1 bg-[#111111] relative overflow-hidden flex items-center justify-center cursor-${viewMode === '3D' ? 'move' : 'grab'}`}
-                        onPointerDown={handlePointerDown}
-                        onPointerMove={handlePointerMove}
-                        onPointerUp={handlePointerUp}
-                        onContextMenu={e => e.preventDefault()}
-                        onWheel={handleWheel}
-                        style={isFloating && !isFullscreen ? { height: size.height - 130 } : {}}
-                    >
-                        <svg
-                            viewBox={viewBox}
-                            className="w-full h-full"
-                            preserveAspectRatio="xMidYMid meet"
-                        >
-                            <g transform={`scale(${zoom}) translate(${pan.x}, ${pan.y})`}>
+            {/* Main Content */}
+            <div className="flex-1 overflow-hidden relative">
+                {/* SVG Visualization */}
+                <svg
+                    viewBox={viewBox}
+                    className="w-full h-full bg-slate-950"
+                    onPointerDown={handlePointerDown}
+                    onPointerMove={handlePointerMove}
+                    onPointerUp={handlePointerUp}
+                    onWheel={handleWheel}
+                    style={{ transform: `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)` }}
+                >
+                    {/* Grid */}
+                    <defs>
+                        <pattern id="smallGrid" width="10" height="10" patternUnits="userSpaceOnUse">
+                            <path d="M 10 0 L 0 0 0 10" fill="none" stroke="#1e293b" strokeWidth="0.5" />
+                        </pattern>
+                        <pattern id="grid" width="100" height="100" patternUnits="userSpaceOnUse">
+                            <rect width="100" height="100" fill="url(#smallGrid)" />
+                            <path d="M 100 0 L 0 0 0 100" fill="none" stroke="#1e293b" strokeWidth="1" />
+                        </pattern>
+                    </defs>
+                    <rect width="100%" height="100%" fill="url(#grid)" />
 
-                                {/* Axes Origin */}
-                                {(() => {
-                                    const o = project(0, 0, 0);
-                                    const x = project(20, 0, 0);
-                                    const y = project(0, 20, 0);
-                                    const z = project(0, 0, 20);
-                                    return (
-                                        <g opacity="0.4" pointerEvents="none">
-                                            <line x1={o.x} y1={o.y} x2={x.x} y2={x.y} stroke="#ef4444" strokeWidth="1" />
-                                            <line x1={o.x} y1={o.y} x2={y.x} y2={y.y} stroke="#22c55e" strokeWidth="1" />
-                                            {viewMode === '3D' && <line x1={o.x} y1={o.y} x2={z.x} y2={z.y} stroke="#3b82f6" strokeWidth="1" />}
-                                        </g>
-                                    )
-                                })()}
+                    {/* Bounds Box */}
+                    <rect x={bounds.minX} y={bounds.minY} width={bounds.maxX - bounds.minX} height={bounds.maxY - bounds.minY} fill="none" stroke="#64748b" strokeWidth="0.5" strokeDasharray="5,5" />
 
-                                {/* Paths */}
-                                {segments.map((seg, i) => {
-                                    const p1 = project(seg.x1, seg.y1, seg.z1);
-                                    const p2 = project(seg.x2, seg.y2, seg.z2);
-                                    const isRapid = seg.type === 'G0';
-                                    const isSelected = selectedLineIndex === seg.lineIndex || selectedSegmentIndices.includes(i);
-                                    return (
-                                        <g key={i}>
-                                            {/* Hit Area (Thicker, Transparent) */}
-                                            <line
-                                                x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
-                                                stroke="transparent"
-                                                strokeWidth={10}
-                                                vectorEffect="non-scaling-stroke"
-                                                onPointerDown={(e) => {
-                                                    e.stopPropagation();
-                                                    console.log('Path clicked (Hit Area), Index:', i);
+                    {/* G-Code Path */}
+                    <g>
+                        {segments.map((segment, idx) => {
+                            const isSelected = selectedSegmentIndices.includes(idx);
+                            const p1 = project(segment.x1, segment.y1, segment.z1);
+                            const p2 = project(segment.x2, segment.y2, segment.z2);
+                            return (
+                                <line
+                                    key={idx}
+                                    x1={p1.x}
+                                    y1={p1.y}
+                                    x2={p2.x}
+                                    y2={p2.y}
+                                    stroke={isSelected ? "#fbbf24" : segment.type === 'G0' ? "#60a5fa" : "#34d399"}
+                                    strokeWidth={isSelected ? 2 : 1}
+                                    opacity={isSelected ? 1 : 0.7}
+                                    className="cursor-pointer"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (e.shiftKey && lastClickedIndex !== null) {
+                                            // Range selection
+                                            const start = Math.min(lastClickedIndex, idx);
+                                            const end = Math.max(lastClickedIndex, idx);
+                                            const newSelection = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+                                            setSelectedSegmentIndices(prev => Array.from(new Set([...prev, ...newSelection])));
+                                        } else if (e.ctrlKey || e.metaKey) {
+                                            // Toggle selection
+                                            setSelectedSegmentIndices(prev =>
+                                                prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]
+                                            );
+                                        } else {
+                                            // Single selection
+                                            setSelectedSegmentIndices([idx]);
+                                            setSelectedLineIndex(segment.lineIndex);
+                                        }
+                                        setLastClickedIndex(idx);
+                                    }}
+                                />
+                            );
+                        })}
+                    </g>
 
-                                                    if (e.shiftKey && lastClickedIndex !== null) {
-                                                        // Range Selection
-                                                        const start = Math.min(lastClickedIndex, i);
-                                                        const end = Math.max(lastClickedIndex, i);
-                                                        const range = Array.from({ length: end - start + 1 }, (_, k) => k + start);
+                    {/* Simulation Point */}
+                    {isSimulating && (
+                        <circle cx={simProj.x} cy={simProj.y} r="3" fill="#fbbf24" />
+                    )}
+                </svg>
 
-                                                        if (e.ctrlKey || e.metaKey) {
-                                                            // Add range to existing
-                                                            setSelectedSegmentIndices(prev => {
-                                                                const newSet = new Set([...prev, ...range]);
-                                                                return Array.from(newSet);
-                                                            });
-                                                        } else {
-                                                            // Replace with range
-                                                            setSelectedSegmentIndices(range);
-                                                            setSelectedLineIndex(null);
-                                                        }
-                                                    } else if (e.ctrlKey || e.metaKey) {
-                                                        // Multi-select toggle
-                                                        setSelectedSegmentIndices(prev =>
-                                                            prev.includes(i) ? prev.filter(idx => idx !== i) : [...prev, i]
-                                                        );
-                                                        setLastClickedIndex(i);
-                                                    } else {
-                                                        // Single select
-                                                        setSelectedLineIndex(seg.lineIndex);
-                                                        setSelectedSegmentIndices([i]);
-                                                        setLastClickedIndex(i);
-                                                    }
-                                                }}
-                                                className="cursor-pointer"
-                                            />
-                                            {/* Visible Line */}
-                                            <line
-                                                x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
-                                                stroke={isSelected ? '#facc15' : (isRapid ? '#ef4444' : '#0ea5e9')}
-                                                strokeWidth={isSelected ? 3 : (isRapid ? 0.3 : 1)}
-                                                strokeDasharray={isRapid ? '1 1' : 'none'}
-                                                opacity={isRapid ? 0.4 : 0.9}
-                                                vectorEffect="non-scaling-stroke"
-                                                pointerEvents="none"
-                                            />
-                                        </g>
-                                    )
-                                })}
-
-                                {/* Virtual Tool Head (Simulation) */}
-                                {!isNaN(simProj.x) && !isNaN(simProj.y) && (
-                                    <g transform={`translate(${simProj.x}, ${simProj.y})`}>
-                                        <circle r="3" fill="#22d3ee" fillOpacity="0.8" stroke="#fff" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-                                    </g>
-                                )}
-
-                                {/* Actual Machine Head */}
-                                {!isNaN(mProj.x) && !isNaN(mProj.y) && (
-                                    <g transform={`translate(${mProj.x}, ${mProj.y})`}>
-                                        <circle r="2" fill="#eab308" fillOpacity="0.5" stroke="#eab308" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
-                                    </g>
-                                )}
-                            </g>
-                        </svg>
-
-                        <div className="absolute bottom-32 left-4 bg-slate-900/80 p-2 rounded border border-slate-700 text-[10px] pointer-events-none select-none">
-                            <div className="text-slate-400 mb-1 font-bold">{viewMode} VIEW</div>
-                            <div className="flex items-center gap-2 mb-1"><div className="w-3 h-0.5 bg-sky-500"></div> Feed (G1/2/3)</div>
-                            <div className="flex items-center gap-2 mb-1"><div className="w-3 h-0.5 bg-red-500 border-dashed border-t border-red-500"></div> Rapid (G0)</div>
-                            <div className="text-slate-500 mt-1 italic">Left Drag: Rotate/Pan • Click: Select • Ctrl+Click: Multi-Select</div>
-                        </div>
-
-                        {(selectedLineIndex !== null || selectedSegmentIndices.length > 0) && (
-                            <div
-                                className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-slate-800 p-2 rounded-full border border-slate-600 shadow-xl z-10"
-                                onPointerDown={(e) => e.stopPropagation()}
-                            >
-                                <span className="text-xs text-slate-300 pl-2">
-                                    {selectedSegmentIndices.length > 1
-                                        ? `${selectedSegmentIndices.length} Segments Selected`
-                                        : selectedLineIndex !== null
-                                            ? `Line ${selectedLineIndex + 1} Selected`
-                                            : '1 Segment Selected'}
-                                </span>
-                                <Ripple><button
-                                    onClick={handleDeleteSegments}
-                                    className="p-1 bg-red-600 hover:bg-red-500 rounded-full text-white"
-                                    title="Delete Segment"
-                                >
-                                    <Trash2 size={14} className="pointer-events-none" />
-                                </button></Ripple>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Simulation Controls */}
-                    <div className="bg-slate-800 border-t border-slate-700 p-2 shrink-0 z-20 flex items-center gap-4 px-4">
+                {/* Selection Info Overlay */}
+                {(selectedLineIndex !== null || selectedSegmentIndices.length > 0) && (
+                    <div className="absolute bottom-4 left-4 right-4 bg-slate-800/90 backdrop-blur-sm rounded-lg p-3 border border-slate-700 flex items-center justify-between">
+                        <span className="text-xs text-slate-300 pl-2">
+                            {selectedSegmentIndices.length > 1
+                                ? `${selectedSegmentIndices.length} Segments Selected`
+                                : selectedLineIndex !== null
+                                    ? `Line ${selectedLineIndex + 1} Selected`
+                                    : '1 Segment Selected'}
+                        </span>
                         <Ripple><button
-                            onClick={handleToggleSimulation}
-                            className={`p-2 rounded-full ${isSimulating ? 'bg-yellow-600 text-white' : 'bg-sky-600 text-white'} hover:opacity-90`}
+                            onClick={handleDeleteSegments}
+                            className="p-1 bg-red-600 hover:bg-red-500 rounded-full text-white"
+                            title="Delete Segment"
                         >
-                            {isSimulating ? <Pause size={16} /> : <Play size={16} />}
+                            <Trash2 size={14} className="pointer-events-none" />
                         </button></Ripple>
-                        <Ripple><button onClick={handleSimStop} className="p-2 text-slate-400 hover:text-white">
-                            <Square size={16} />
-                        </button></Ripple>
+                    </div>
+                )}
+            </div>
+
+            {/* Simulation Controls Accordion */}
+            <div className="bg-slate-800 border-t border-slate-700 shrink-0 z-20">
+                <Ripple>
+                    <button
+                        onClick={() => setIsSimulationExpanded(!isSimulationExpanded)}
+                        className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-700/50 transition-colors cursor-pointer"
+                        aria-expanded={isSimulationExpanded}
+                        aria-controls="simulation-accordion-content"
+                    >
+                        <h3 className="text-sm font-semibold text-slate-300 uppercase flex items-center gap-2">
+                            {isSimulationExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                            Simulation Controls
+                        </h3>
+                    </button>
+                </Ripple>
+                <div
+                    id="simulation-accordion-content"
+                    className="overflow-hidden transition-all duration-300 ease-in-out"
+                    style={{
+                        maxHeight: isSimulationExpanded ? '200px' : '0px'
+                    }}
+                >
+                    <div className="border-t border-slate-700 p-2 flex items-center gap-4 px-4">
+                        <Ripple>
+                            <button
+                                onClick={handleToggleSimulation}
+                                className={`p-2 rounded-full ${isSimulating ? 'bg-yellow-600 text-white' : 'bg-sky-600 text-white'} hover:opacity-90`}
+                            >
+                                {isSimulating ? <Pause size={16} /> : <Play size={16} />}
+                            </button>
+                        </Ripple>
+                        <Ripple>
+                            <button onClick={handleSimStop} className="p-2 text-slate-400 hover:text-white">
+                                <Square size={16} />
+                            </button>
+                        </Ripple>
 
                         <div className="flex-1 flex flex-col gap-1">
                             <div className="flex justify-between text-xs text-slate-400">
@@ -659,75 +603,115 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                             </select>
                         </div>
                     </div>
+                </div>
+            </div>
 
-                    {/* Job Control Overlay */}
-                    <div className="bg-slate-900 border-t border-slate-800 p-4 shrink-0 z-20">
-                        <div className="flex justify-between items-center mb-2">
-                            <h3 className="text-xs font-semibold text-slate-400 uppercase">Machine Job Control</h3>
-                            {jobTotal > 0 && (
-                                <span className="text-xs text-sky-400">{Math.round((jobProgress / jobTotal) * 100)}%</span>
-                            )}
-                        </div>
+            {/* Job Control Accordion */}
+            <div className="bg-slate-900 border-t border-slate-800 shrink-0">
+                <Ripple>
+                    <button
+                        onClick={() => setIsJobControlExpanded(!isJobControlExpanded)}
+                        className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-800/50 transition-colors cursor-pointer"
+                        aria-expanded={isJobControlExpanded}
+                        aria-controls="job-control-accordion-content"
+                    >
+                        <h3 className="text-sm font-semibold text-slate-300 uppercase flex items-center gap-2">
+                            {isJobControlExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                            Machine Job Control
+                        </h3>
+                        {jobTotal > 0 && (
+                            <span className="text-xs text-sky-400">{Math.round((jobProgress / jobTotal) * 100)}%</span>
+                        )}
+                    </button>
+                </Ripple>
+                <div
+                    id="job-control-accordion-content"
+                    className="overflow-hidden transition-all duration-300 ease-in-out"
+                    style={{
+                        maxHeight: isJobControlExpanded ? '200px' : '0px'
+                    }}
+                >
+                    <div className="border-t border-slate-800 p-4">
                         {jobTotal > 0 && (
                             <div className="w-full bg-slate-800 rounded-full h-2 mb-4 overflow-hidden">
                                 <div className="bg-green-500 h-full transition-all duration-300" style={{ width: `${(jobProgress / jobTotal) * 100}%` }}></div>
                             </div>
                         )}
                         <div className="flex gap-2">
-                            <Ripple disabled={!gcode || !isConnected || isJobRunning}><button onClick={handleRunJob} disabled={!gcode || !isConnected || isJobRunning} className="flex-1 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center gap-2 text-white font-medium">
-                                <Play size={16} /> Run on Machine
-                            </button></Ripple>
-                            <Ripple disabled={!isConnected || !isJobRunning}><button onClick={handlePauseJob} disabled={!isConnected || !isJobRunning} className="px-4 py-2 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center text-white">
-                                <Pause size={16} />
-                            </button></Ripple>
-                            <Ripple disabled={!isConnected || (!isJobRunning && jobProgress === 0)}><button onClick={handleStopJob} disabled={!isConnected || (!isJobRunning && jobProgress === 0)} className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center text-white">
-                                <Square size={16} />
-                            </button></Ripple>
+                            <Ripple disabled={!gcode || !isConnected || isJobRunning}>
+                                <button 
+                                    onClick={handleRunJob} 
+                                    disabled={!gcode || !isConnected || isJobRunning} 
+                                    className="flex-1 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center gap-2 text-white font-medium"
+                                >
+                                    <Play size={16} /> Run on Machine
+                                </button>
+                            </Ripple>
+                            <Ripple disabled={!isConnected || !isJobRunning}>
+                                <button 
+                                    onClick={handlePauseJob} 
+                                    disabled={!isConnected || !isJobRunning} 
+                                    className="px-4 py-2 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center text-white"
+                                >
+                                    <Pause size={16} />
+                                </button>
+                            </Ripple>
+                            <Ripple disabled={!isConnected || (!isJobRunning && jobProgress === 0)}>
+                                <button 
+                                    onClick={handleStopJob} 
+                                    disabled={!isConnected || (!isJobRunning && jobProgress === 0)} 
+                                    className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center text-white"
+                                >
+                                    <Square size={16} />
+                                </button>
+                            </Ripple>
                         </div>
                         {!isConnected && <div className="text-center text-xs text-red-400 mt-2">Machine Disconnected</div>}
                     </div>
+                </div>
+            </div>
 
-                    {/* G-Code Accordion Section */}
-                    <div className="bg-slate-900 border-t border-slate-800 shrink-0">
-                        <Ripple><button
-                            onClick={() => setIsGCodeExpanded(!isGCodeExpanded)}
-                            className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-800/50 transition-colors cursor-pointer"
-                            aria-expanded={isGCodeExpanded}
-                            aria-controls="gcode-accordion-content"
-                        >
-                            <h3 className="text-sm font-semibold text-slate-300 uppercase flex items-center gap-2">
-                                {isGCodeExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                                G-Code Editor
-                            </h3>
-                            {isManualMode && (
-                                <span className="text-xs text-yellow-500 bg-yellow-900/20 px-2 py-1 rounded">Manual Mode</span>
-                            )}
-                        </button></Ripple>
-                        <div
-                            id="gcode-accordion-content"
-                            className="overflow-hidden transition-all duration-300 ease-in-out"
-                            style={{
-                                maxHeight: isGCodeExpanded ? '400px' : '0px'
-                            }}
-                        >
-                            <div className="border-t border-slate-800">
-                                <CodeEditor
-                                    code={gcode}
-                                    onChange={onUpdateGCode}
-                                    onRegenerate={onRegenerate || (() => { })}
-                                    isManualMode={isManualMode || false}
-                                    generateOnlySelected={generateOnlySelected}
-                                    onToggleGenerateOnlySelected={onToggleGenerateOnlySelected}
-                                />
-                            </div>
-                        </div>
+            {/* G-Code Accordion Section */}
+            <div className="bg-slate-900 border-t border-slate-800 shrink-0">
+                <Ripple>
+                    <button
+                        onClick={() => setIsGCodeExpanded(!isGCodeExpanded)}
+                        className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-800/50 transition-colors cursor-pointer"
+                        aria-expanded={isGCodeExpanded}
+                        aria-controls="gcode-accordion-content"
+                    >
+                        <h3 className="text-sm font-semibold text-slate-300 uppercase flex items-center gap-2">
+                            {isGCodeExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                            G-Code Editor
+                        </h3>
+                        {isManualMode && (
+                            <span className="text-xs text-yellow-500 bg-yellow-900/20 px-2 py-1 rounded">Manual Mode</span>
+                        )}
+                    </button>
+                </Ripple>
+                <div
+                    id="gcode-accordion-content"
+                    className="overflow-hidden transition-all duration-300 ease-in-out"
+                    style={{
+                        maxHeight: isGCodeExpanded ? '400px' : '0px'
+                    }}
+                >
+                    <div className="border-t border-slate-800">
+                        <CodeEditor
+                            code={gcode}
+                            onChange={onUpdateGCode}
+                            onRegenerate={onRegenerate || (() => { })}
+                            isManualMode={isManualMode || false}
+                            generateOnlySelected={generateOnlySelected}
+                            onToggleGenerateOnlySelected={onToggleGenerateOnlySelected}
+                        />
                     </div>
-                </>
-            )}
+                </div>
+            </div>
         </div>
     );
 
-    return isFloating ? createPortal(content, document.body) : content;
+    return content;
 };
 
 export default SimulatorPanel;

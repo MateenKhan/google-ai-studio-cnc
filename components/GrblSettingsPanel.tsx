@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
-import { Settings, Save, RefreshCw, X, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Settings, Save, RefreshCw, X, AlertTriangle, Maximize2, Minimize2 } from 'lucide-react';
 import { serialService } from '../services/serialService';
 import { GrblSetting } from '../types';
 
@@ -53,6 +53,32 @@ const PRIORITY_SETTINGS = ['100', '101', '102', '110', '111', '112', '120', '121
 const GrblSettingsPanel: React.FC<GrblSettingsPanelProps> = ({ settings, onClose, onRefresh }) => {
   const [editedSettings, setEditedSettings] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = async () => {
+    if (!wrapperRef.current) return;
+
+    if (!document.fullscreenElement) {
+      try {
+        await wrapperRef.current.requestFullscreen();
+      } catch (err) {
+        console.error("Error attempting to enable fullscreen:", err);
+      }
+    } else {
+      if (document.exitFullscreen) {
+        await document.exitFullscreen();
+      }
+    }
+  };
 
   // Auto-refresh on mount if empty
   useEffect(() => {
@@ -118,12 +144,18 @@ const GrblSettingsPanel: React.FC<GrblSettingsPanelProps> = ({ settings, onClose
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-900 w-full">
+    <div 
+      ref={wrapperRef}
+      className={`flex flex-col bg-slate-900 w-full ${isFullscreen ? 'fixed inset-0 z-[10000] w-screen h-screen' : 'h-full'}`}
+    >
       <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800">
         <h2 className="font-bold text-slate-100 flex items-center gap-2">
             <Settings size={18} /> Firmware Settings
         </h2>
         <div className="flex gap-2">
+             <button onClick={toggleFullscreen} className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-700 rounded" title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}>
+               {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+             </button>
              <button onClick={onRefresh} className="text-slate-400 hover:text-sky-400" title="Refresh $$"><RefreshCw size={18} /></button>
              <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={18} /></button>
         </div>

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Terminal, Send, Trash2, X, Pause, Play } from 'lucide-react';
+import { Terminal, Send, Trash2, X, Pause, Play, Maximize2, Minimize2 } from 'lucide-react';
 import { serialService } from '../services/serialService';
 
 interface LogsPanelProps {
@@ -13,7 +13,33 @@ interface LogsPanelProps {
 
 const LogsPanel: React.FC<LogsPanelProps> = ({ logs, onClose, onClear, isLogEnabled = true, onToggleLog }) => {
   const [command, setCommand] = useState('');
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = async () => {
+    if (!wrapperRef.current) return;
+
+    if (!document.fullscreenElement) {
+      try {
+        await wrapperRef.current.requestFullscreen();
+      } catch (err) {
+        console.error("Error attempting to enable fullscreen:", err);
+      }
+    } else {
+      if (document.exitFullscreen) {
+        await document.exitFullscreen();
+      }
+    }
+  };
 
   useEffect(() => {
     if (isLogEnabled) {
@@ -29,12 +55,18 @@ const LogsPanel: React.FC<LogsPanelProps> = ({ logs, onClose, onClear, isLogEnab
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-900 w-full">
+    <div 
+      ref={wrapperRef}
+      className={`flex flex-col bg-slate-900 w-full ${isFullscreen ? 'fixed inset-0 z-[10000] w-screen h-screen' : 'h-full'}`}
+    >
       <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800">
         <h2 className="font-bold text-slate-100 flex items-center gap-2">
             <Terminal size={18} /> Console
         </h2>
         <div className="flex gap-2">
+             <button onClick={toggleFullscreen} className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-700 rounded" title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}>
+               {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+             </button>
              {onToggleLog && (
                  <button 
                     onClick={onToggleLog} 

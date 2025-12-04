@@ -1,8 +1,8 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { serialService } from '../services/serialService';
 import { MachineStatus } from '../types';
-import { Power, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Home, Crosshair, AlertCircle, Settings, Usb, Smartphone, ScanLine, X } from 'lucide-react';
+import { Power, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Home, Crosshair, AlertCircle, Settings, Usb, Smartphone, ScanLine, X, Maximize2, Minimize2 } from 'lucide-react';
 
 interface MachineControlProps {
   onClose: () => void;
@@ -28,6 +28,32 @@ const MachineControl: React.FC<MachineControlProps> = ({
   const [stepSize, setStepSize] = useState(10);
   const [jogMode, setJogMode] = useState<'STEP' | 'CONTINUOUS'>('STEP');
   const [showMobileWidget, setShowMobileWidget] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = async () => {
+    if (!wrapperRef.current) return;
+
+    if (!document.fullscreenElement) {
+      try {
+        await wrapperRef.current.requestFullscreen();
+      } catch (err) {
+        console.error("Error attempting to enable fullscreen:", err);
+      }
+    } else {
+      if (document.exitFullscreen) {
+        await document.exitFullscreen();
+      }
+    }
+  };
   
   const handleConnect = async () => {
       try {
@@ -115,14 +141,20 @@ const MachineControl: React.FC<MachineControlProps> = ({
   const height = hasBounds ? (gcodeTotalSize.maxY - gcodeTotalSize.minY).toFixed(2) : '0.00';
 
   return (
-    <div className="flex flex-col h-full bg-slate-900 w-full relative">
+    <div 
+      ref={wrapperRef}
+      className={`flex flex-col bg-slate-900 w-full ${isFullscreen ? 'fixed inset-0 z-[10000] w-screen h-screen' : 'h-full'} relative`}
+    >
       <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800 shrink-0">
         <h2 className="font-bold text-slate-100 flex items-center gap-2">
             <Settings size={18} /> Machine Control
         </h2>
         <div className="flex gap-2">
+             <button onClick={toggleFullscreen} className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-700 rounded" title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}>
+               {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+             </button>
              <button onClick={() => setShowMobileWidget(true)} className="text-slate-400 hover:text-white" title="Mobile Control"><Smartphone size={18} /></button>
-             <button onClick={onClose} className="text-slate-400 hover:text-white"><AlertCircle size={18} className="rotate-45" /></button>
+             <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={18} /></button>
         </div>
       </div>
 

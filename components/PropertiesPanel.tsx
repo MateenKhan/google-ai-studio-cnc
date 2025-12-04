@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Shape, ShapeType, RectangleShape, CircleShape, TextShape, HeartShape, LineShape, Unit, MirrorMode } from '../types';
-import { Layers, Trash2, X, Settings, Calculator, LayoutGrid, Type } from 'lucide-react';
+import { Layers, Trash2, X, Settings, Calculator, LayoutGrid, Type, Maximize2, Minimize2 } from 'lucide-react';
 import { fromMm, toMm } from '../utils';
 import { AVAILABLE_FONTS } from '../services/gcodeService';
 
@@ -35,6 +35,32 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     onUpdateGridSize,
     onShapeChangeStart
 }) => {
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = async () => {
+    if (!wrapperRef.current) return;
+
+    if (!document.fullscreenElement) {
+      try {
+        await wrapperRef.current.requestFullscreen();
+      } catch (err) {
+        console.error("Error attempting to enable fullscreen:", err);
+      }
+    } else {
+      if (document.exitFullscreen) {
+        await document.exitFullscreen();
+      }
+    }
+  };
   if (selectedShapes.length === 0) {
     const handleCanvasChange = (dim: 'w' | 'h', valStr: string) => {
         const val = parseFloat(valStr);
@@ -45,11 +71,25 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     };
 
     return (
-      <div className="p-4 flex flex-col h-full relative">
-         <button onClick={onClose} className="md:hidden absolute top-0 right-0 p-2 text-slate-400 hover:text-white">
-            <X size={20} />
-         </button>
-        <div className="flex-1 flex flex-col items-center justify-center text-slate-600 text-center p-8 space-y-6">
+      <div 
+        ref={wrapperRef}
+        className={`flex flex-col bg-slate-800 ${isFullscreen ? 'fixed inset-0 z-[10000] w-screen h-screen' : 'h-full'}`}
+      >
+        <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800 shrink-0">
+          <h3 className="font-bold text-slate-100 flex items-center gap-2">
+            <Layers size={18} /> Properties
+          </h3>
+          <div className="flex gap-2">
+            <button onClick={toggleFullscreen} className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-700 rounded" title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}>
+              {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            </button>
+            <button onClick={onClose} className="text-slate-400 hover:text-white">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4">
+          <div className="flex-1 flex flex-col items-center justify-center text-slate-600 text-center p-8 space-y-6">
             <div className="flex flex-col items-center">
                 <Layers size={48} className="mb-4 opacity-50" />
                 <p className="text-sm">Select a shape to edit properties.</p>
@@ -100,6 +140,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                     </button>
                 )}
             </div>
+          </div>
         </div>
       </div>
     );
@@ -143,16 +184,27 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   };
 
   return (
-    <div className="p-4 flex flex-col gap-4 relative">
-       <button onClick={onClose} className="md:hidden absolute top-2 right-2 text-slate-400 hover:text-white">
-            <X size={20} />
-       </button>
-      <h3 className="text-slate-100 font-semibold border-b border-slate-700 pb-2 flex justify-between items-center pr-8">
-        <span>Properties <span className="text-xs text-slate-500 font-normal">({unit})</span></span>
-        {selectedShapes.length > 1 && (
-             <span className="bg-sky-900 text-sky-200 text-xs px-2 py-0.5 rounded-full">{selectedShapes.length} Items</span>
-        )}
-      </h3>
+    <div 
+      ref={wrapperRef}
+      className={`flex flex-col bg-slate-800 ${isFullscreen ? 'fixed inset-0 z-[10000] w-screen h-screen' : 'h-full'}`}
+    >
+      <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800 shrink-0">
+        <h3 className="font-bold text-slate-100 flex items-center gap-2">
+          <Layers size={18} /> Properties <span className="text-xs text-slate-500 font-normal">({unit})</span>
+          {selectedShapes.length > 1 && (
+            <span className="bg-sky-900 text-sky-200 text-xs px-2 py-0.5 rounded-full ml-2">{selectedShapes.length} Items</span>
+          )}
+        </h3>
+        <div className="flex gap-2">
+          <button onClick={toggleFullscreen} className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-700 rounded" title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}>
+            {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </button>
+          <button onClick={onClose} className="text-slate-400 hover:text-white">
+            <X size={18} />
+          </button>
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
       
       {/* Position */}
       <div className="grid grid-cols-2 gap-2">
@@ -320,6 +372,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
            >
              <Trash2 size={16} /> Delete
        </button>
+      </div>
     </div>
   );
 };
