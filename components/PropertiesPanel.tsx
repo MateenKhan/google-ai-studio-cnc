@@ -11,13 +11,13 @@ interface PropertiesPanelProps {
   onDelete: (ids: string[]) => void;
   onClose: () => void;
   unit: Unit;
-  onOpenMachineControl?: () => void;
   onOpenCalibration?: () => void;
   canvasWidth?: number;
   canvasHeight?: number;
   onUpdateCanvasSize?: (w: number, h: number) => void;
   gridSize?: number;
   onUpdateGridSize?: (size: number) => void;
+  onShapeChangeStart?: () => void;
 }
 
 const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ 
@@ -27,13 +27,13 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     onDelete, 
     onClose, 
     unit,
-    onOpenMachineControl,
     onOpenCalibration,
     canvasWidth = 3050,
     canvasHeight = 2150,
     onUpdateCanvasSize,
     gridSize = 10,
-    onUpdateGridSize
+    onUpdateGridSize,
+    onShapeChangeStart
 }) => {
   if (selectedShapes.length === 0) {
     const handleCanvasChange = (dim: 'w' | 'h', valStr: string) => {
@@ -94,11 +94,6 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             </div>
 
             <div className="mt-4 flex flex-col gap-2 w-full max-w-[240px]">
-                {onOpenMachineControl && (
-                    <button onClick={onOpenMachineControl} className="btn-secondary py-2 px-4 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center gap-2 border border-slate-700 transition-colors">
-                        <Settings size={16} /> Machine Control
-                    </button>
-                )}
                 {onOpenCalibration && (
                     <button onClick={onOpenCalibration} className="btn-secondary py-2 px-4 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center gap-2 border border-slate-700 transition-colors">
                         <Calculator size={16} /> Steps Calibrator
@@ -142,6 +137,11 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   const hasType = (t: ShapeType) => selectedShapes.some(s => s.type === t);
   const isAllText = selectedShapes.every(s => s.type === ShapeType.TEXT);
 
+  const inputProps = {
+      onFocus: () => onShapeChangeStart?.(),
+      className: "bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
+  };
+
   return (
     <div className="p-4 flex flex-col gap-4 relative">
        <button onClick={onClose} className="md:hidden absolute top-2 right-2 text-slate-400 hover:text-white">
@@ -162,7 +162,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             type="number" 
             value={getCommonValue('x')}
             onChange={(e) => handleValChange('x', e.target.value)}
-            className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
+            {...inputProps}
           />
         </div>
         <div className="flex flex-col gap-1">
@@ -171,7 +171,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             type="number" 
             value={getCommonValue('y')}
             onChange={(e) => handleValChange('y', e.target.value)}
-            className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
+            {...inputProps}
           />
         </div>
       </div>
@@ -185,7 +185,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 type="number" 
                 value={getCommonValue('width')}
                 onChange={(e) => handleValChange('width', e.target.value)}
-                className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
+                {...inputProps}
               />
             </div>
             <div className="flex flex-col gap-1">
@@ -194,7 +194,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 type="number" 
                 value={getCommonValue('height')}
                 onChange={(e) => handleValChange('height', e.target.value)}
-                className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
+                {...inputProps}
               />
             </div>
           </div>
@@ -208,7 +208,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 type="number" 
                 value={getCommonValue('cornerRadius')}
                 onChange={(e) => handleValChange('cornerRadius', e.target.value)}
-                className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
+                {...inputProps}
             />
           </div>
       )}
@@ -221,7 +221,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 type="number" 
                 value={getCommonValue('radius')}
                 onChange={(e) => handleValChange('radius', e.target.value)}
-                className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
+                {...inputProps}
             />
           </div>
       )}
@@ -235,7 +235,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 type="number" 
                 value={getCommonValue('x2')}
                 onChange={(e) => handleValChange('x2', e.target.value)}
-                className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
+                {...inputProps}
               />
             </div>
             <div className="flex flex-col gap-1">
@@ -244,7 +244,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 type="number" 
                 value={getCommonValue('y2')}
                 onChange={(e) => handleValChange('y2', e.target.value)}
-                className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
+                {...inputProps}
               />
             </div>
           </div>
@@ -261,7 +261,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   const updates = selectedShapes.map(s => ({ ...s, text: e.target.value } as TextShape));
                   onUpdateShapes(updates);
               }}
-              className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
+              {...inputProps}
             />
           </div>
           
@@ -273,6 +273,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                     const updates = selectedShapes.map(s => ({ ...s, fontFamily: e.target.value } as TextShape));
                     onUpdateShapes(updates);
                 }}
+                onFocus={() => onShapeChangeStart?.()}
                 className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
              >
                  {AVAILABLE_FONTS.map(f => <option key={f} value={f}>{f}</option>)}
@@ -286,7 +287,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 type="number" 
                 value={getCommonValue('fontSize')}
                 onChange={(e) => handleValChange('fontSize', e.target.value)}
-                className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
+                {...inputProps}
                 />
             </div>
              <div className="flex flex-col gap-1">
@@ -298,6 +299,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                     const updates = selectedShapes.map(s => ({ ...s, mirrorMode: val } as TextShape));
                     onUpdateShapes(updates);
                 }}
+                onFocus={() => onShapeChangeStart?.()}
                 className="bg-slate-900 border border-slate-700 rounded p-1 text-sm text-slate-200 focus:border-sky-500 outline-none"
              >
                  <option value={MirrorMode.NONE}>None</option>
@@ -310,7 +312,10 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
       )}
 
        <button 
-             onClick={() => onDelete(selectedShapes.map(s => s.id))}
+             onClick={() => {
+                onShapeChangeStart?.();
+                onDelete(selectedShapes.map(s => s.id));
+             }}
              className="mt-4 py-2 bg-red-900/20 hover:bg-red-900/40 text-red-400 border border-red-900/30 rounded flex items-center justify-center gap-2 transition-colors"
            >
              <Trash2 size={16} /> Delete

@@ -6,6 +6,7 @@ export enum ShapeType {
   HEART = 'HEART',
   LINE = 'LINE',
   POLYLINE = 'POLYLINE',
+  GROUP = 'GROUP',
 }
 
 export enum Tool {
@@ -53,7 +54,6 @@ export interface TextShape extends BaseShape {
   fontFamily?: string;
   letterSpacing?: number;
   mirrorMode?: MirrorMode;
-  // Legacy support
   mirror?: boolean; 
 }
 
@@ -74,7 +74,12 @@ export interface PolylineShape extends BaseShape {
   points: {x: number, y: number}[];
 }
 
-export type Shape = RectangleShape | CircleShape | TextShape | HeartShape | LineShape | PolylineShape;
+export interface GroupShape extends BaseShape {
+  type: ShapeType.GROUP;
+  children: Shape[];
+}
+
+export type Shape = RectangleShape | CircleShape | TextShape | HeartShape | LineShape | PolylineShape | GroupShape;
 
 export interface MachineSettings {
   feedRate: number;
@@ -94,4 +99,10 @@ export interface MachineStatus {
     pos: MachinePosition;
     feed: string;
     spindle: string;
+}
+
+export interface GrblSetting {
+    id: string;
+    value: string;
+    description: string;
 }

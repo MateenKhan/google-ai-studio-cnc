@@ -1,25 +1,24 @@
-import { Shape, ShapeType, MachineSettings, LineShape, PolylineShape, HeartShape, TextShape, MirrorMode, RectangleShape } from '../types';
+
+import { Shape, ShapeType, MachineSettings, LineShape, PolylineShape, HeartShape, TextShape, MirrorMode, RectangleShape, GroupShape, CircleShape } from '../types';
 import opentype from 'opentype.js';
 
 // Cache for loaded fonts
 const fontCache: Record<string, opentype.Font> = {};
 
 // Font URLs - Using GitHub Raw for reliable TTF access
-// Must match the families imported in index.html
 const FONTS: Record<string, string> = {
-  'Roboto Mono': 'https://raw.githubusercontent.com/google/fonts/main/apache/robotomono/static/RobotoMono-Regular.ttf',
+  'Roboto Mono': 'https://raw.githubusercontent.com/google/fonts/main/apache/robotomono/RobotoMono%5Bwght%5D.ttf',
   'Great Vibes': 'https://raw.githubusercontent.com/google/fonts/main/ofl/greatvibes/GreatVibes-Regular.ttf',
-  'Open Sans': 'https://raw.githubusercontent.com/google/fonts/main/ofl/opensans/OpenSans-Regular.ttf',
+  'Open Sans': 'https://raw.githubusercontent.com/google/fonts/main/ofl/opensans/OpenSans%5Bwdth,wght%5D.ttf',
   'Lato': 'https://raw.githubusercontent.com/google/fonts/main/ofl/lato/Lato-Regular.ttf',
-  'Montserrat': 'https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/Montserrat-Regular.ttf',
-  'Oswald': 'https://raw.githubusercontent.com/google/fonts/main/ofl/oswald/static/Oswald-Regular.ttf',
-  'Playfair Display': 'https://raw.githubusercontent.com/google/fonts/main/ofl/playfairdisplay/static/PlayfairDisplay-Regular.ttf'
+  'Montserrat': 'https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/Montserrat%5Bwght%5D.ttf',
+  'Oswald': 'https://raw.githubusercontent.com/google/fonts/main/ofl/oswald/Oswald%5Bwght%5D.ttf',
+  'Playfair Display': 'https://raw.githubusercontent.com/google/fonts/main/ofl/playfairdisplay/PlayfairDisplay%5Bwght%5D.ttf'
 };
 
 export const AVAILABLE_FONTS = Object.keys(FONTS);
 
 async function loadFont(fontFamily: string): Promise<opentype.Font | null> {
-    // Try to find a partial match if exact match fails
     const key = Object.keys(FONTS).find(k => fontFamily.toLowerCase().includes(k.toLowerCase())) || 'Roboto Mono';
     const url = FONTS[key];
     
@@ -33,7 +32,10 @@ async function loadFont(fontFamily: string): Promise<opentype.Font | null> {
         fontCache[url] = font;
         return font;
     } catch (err) {
-        console.error(`Font load error for ${fontFamily}, trying fallback:`, err);
+        console.error(`Font load error for ${fontFamily} (${url}), trying fallback to Roboto Mono...`, err);
+        if (url !== FONTS['Roboto Mono']) {
+             return loadFont('Roboto Mono');
+        }
         return null;
     }
 }
@@ -47,188 +49,223 @@ export const generateGCode = async (shapes: Shape[], settings: MachineSettings):
   lines.push('M3 S1000');
   lines.push('');
 
-  for (const shape of shapes) {
-    lines.push(`; Shape: ${shape.type} ID:${shape.id.substring(0,4)}`);
-    switch (shape.type) {
-      case ShapeType.RECTANGLE:
-        const r = shape as RectangleShape;
-        const { x, y, width, height, cornerRadius = 0 } = r;
-        
-        if (cornerRadius > 0) {
-            // Rounded Rectangle with G2/G3
-            lines.push(`G0 X${(x + cornerRadius).toFixed(3)} Y${y.toFixed(3)}`);
-            lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
-            
-            lines.push(`G1 X${(x + width - cornerRadius).toFixed(3)} Y${y.toFixed(3)} F${feedRate}`);
-            lines.push(`G2 X${(x + width).toFixed(3)} Y${(y + cornerRadius).toFixed(3)} I0 J${cornerRadius.toFixed(3)}`);
-            lines.push(`G1 X${(x + width).toFixed(3)} Y${(y + height - cornerRadius).toFixed(3)}`);
-            lines.push(`G2 X${(x + width - cornerRadius).toFixed(3)} Y${(y + height).toFixed(3)} I-${cornerRadius.toFixed(3)} J0`);
-            lines.push(`G1 X${(x + cornerRadius).toFixed(3)} Y${(y + height).toFixed(3)}`);
-            lines.push(`G2 X${x.toFixed(3)} Y${(y + height - cornerRadius).toFixed(3)} I0 J-${cornerRadius.toFixed(3)}`);
-            lines.push(`G1 X${x.toFixed(3)} Y${(y + cornerRadius).toFixed(3)}`);
-            lines.push(`G2 X${(x + cornerRadius).toFixed(3)} Y${y.toFixed(3)} I${cornerRadius.toFixed(3)} J0`);
-        } else {
-            lines.push(`G0 X${x.toFixed(3)} Y${y.toFixed(3)}`);
-            lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
-            lines.push(`G1 X${(x + width).toFixed(3)} Y${y.toFixed(3)} F${feedRate}`);
-            lines.push(`G1 X${(x + width).toFixed(3)} Y${(y + height).toFixed(3)}`);
-            lines.push(`G1 X${x.toFixed(3)} Y${(y + height).toFixed(3)}`);
-            lines.push(`G1 X${x.toFixed(3)} Y${y.toFixed(3)}`);
-        }
-        lines.push(`G0 Z${safeHeight}`);
-        break;
+  const processShape = async (shape: Shape, offsetX: number = 0, offsetY: number = 0) => {
+      lines.push(`; Shape: ${shape.type} ID:${shape.id.substring(0,4)}`);
+      
+      if (shape.type === ShapeType.GROUP) {
+          const g = shape as GroupShape;
+          // Recursively process children with cumulative offset
+          for (const child of g.children) {
+              await processShape(child, offsetX + g.x, offsetY + g.y);
+          }
+          return;
+      }
 
-      case ShapeType.CIRCLE:
-        lines.push(`G0 X${(shape.x + shape.radius).toFixed(3)} Y${shape.y.toFixed(3)}`);
-        lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
-        lines.push(`G2 X${(shape.x + shape.radius).toFixed(3)} Y${shape.y.toFixed(3)} I-${shape.radius.toFixed(3)} J0 F${feedRate}`);
-        lines.push(`G0 Z${safeHeight}`);
-        break;
+      // Apply offset to coordinates
+      const x = shape.x + offsetX;
+      const y = shape.y + offsetY;
 
-      case ShapeType.LINE:
-        const l = shape as LineShape;
-        lines.push(`G0 X${l.x.toFixed(3)} Y${l.y.toFixed(3)}`);
-        lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
-        lines.push(`G1 X${l.x2.toFixed(3)} Y${l.y2.toFixed(3)} F${feedRate}`);
-        lines.push(`G0 Z${safeHeight}`);
-        break;
-
-      case ShapeType.POLYLINE:
-        const p = shape as PolylineShape;
-        if (p.points.length > 0) {
-            lines.push(`G0 X${p.points[0].x.toFixed(3)} Y${p.points[0].y.toFixed(3)}`);
-            lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
-            for (let i = 1; i < p.points.length; i++) {
-                lines.push(`G1 X${p.points[i].x.toFixed(3)} Y${p.points[i].y.toFixed(3)} F${feedRate}`);
-            }
-            lines.push(`G0 Z${safeHeight}`);
-        }
-        break;
-
-      case ShapeType.HEART:
-        const h = shape as HeartShape;
-        const steps = 40;
-        const firstPt = calculateHeartPoint(0, h);
-        lines.push(`G0 X${firstPt.x.toFixed(3)} Y${firstPt.y.toFixed(3)}`);
-        lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
-        for (let i = 1; i <= steps; i++) {
-            const t = (i / steps) * 2 * Math.PI;
-            const pt = calculateHeartPoint(t, h);
-            lines.push(`G1 X${pt.x.toFixed(3)} Y${pt.y.toFixed(3)} F${feedRate}`);
-        }
-        lines.push(`G0 Z${safeHeight}`);
-        break;
-
-      case ShapeType.TEXT:
-        const textShape = shape as TextShape;
-        lines.push(`; Text: "${textShape.text}"`);
-        let fontToUse = await loadFont(textShape.fontFamily || 'Roboto Mono');
-        
-        if (!fontToUse) {
-             console.warn("Could not load font for text generation.");
-             break;
+      switch (shape.type) {
+        case ShapeType.RECTANGLE: {
+          const r = shape as RectangleShape;
+          const w = r.width;
+          const h = r.height;
+          const cr = r.cornerRadius || 0;
+          
+          if (cr > 0) {
+              lines.push(`G0 X${(x + cr).toFixed(3)} Y${y.toFixed(3)}`);
+              lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
+              lines.push(`G1 X${(x + w - cr).toFixed(3)} Y${y.toFixed(3)} F${feedRate}`);
+              lines.push(`G2 X${(x + w).toFixed(3)} Y${(y + cr).toFixed(3)} I0 J${cr.toFixed(3)}`);
+              lines.push(`G1 X${(x + w).toFixed(3)} Y${(y + h - cr).toFixed(3)}`);
+              lines.push(`G2 X${(x + w - cr).toFixed(3)} Y${(y + h).toFixed(3)} I-${cr.toFixed(3)} J0`);
+              lines.push(`G1 X${(x + cr).toFixed(3)} Y${(y + h).toFixed(3)}`);
+              lines.push(`G2 X${x.toFixed(3)} Y${(y + h - cr).toFixed(3)} I0 J-${cr.toFixed(3)}`);
+              lines.push(`G1 X${x.toFixed(3)} Y${(y + cr).toFixed(3)}`);
+              lines.push(`G2 X${(x + cr).toFixed(3)} Y${y.toFixed(3)} I${cr.toFixed(3)} J0`);
+          } else {
+              lines.push(`G0 X${x.toFixed(3)} Y${y.toFixed(3)}`);
+              lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
+              lines.push(`G1 X${(x + w).toFixed(3)} Y${y.toFixed(3)} F${feedRate}`);
+              lines.push(`G1 X${(x + w).toFixed(3)} Y${(y + h).toFixed(3)}`);
+              lines.push(`G1 X${x.toFixed(3)} Y${(y + h).toFixed(3)}`);
+              lines.push(`G1 X${x.toFixed(3)} Y${y.toFixed(3)}`);
+          }
+          lines.push(`G0 Z${safeHeight}`);
+          break;
         }
 
-        const mirrorMode = textShape.mirrorMode || (textShape.mirror ? MirrorMode.WHOLE : MirrorMode.NONE);
-        
-        const processPath = (path: opentype.Path, offsetX: number) => {
-            let lastX = 0, lastY = 0;
-            let startX = 0, startY = 0;
-            
-            // If mirroring per char, we need the bounding box to flip around its center
-            // However, OpenType paths are relative to the drawing origin (baseline).
-            // We need to apply the transform to the commands.
-            
-            let centerX = 0;
-            if (mirrorMode === MirrorMode.CHAR) {
+        case ShapeType.CIRCLE: {
+          const c = shape as CircleShape;
+          lines.push(`G0 X${(x + c.radius).toFixed(3)} Y${y.toFixed(3)}`);
+          lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
+          lines.push(`G2 X${(x + c.radius).toFixed(3)} Y${y.toFixed(3)} I-${c.radius.toFixed(3)} J0 F${feedRate}`);
+          lines.push(`G0 Z${safeHeight}`);
+          break;
+        }
+
+        case ShapeType.LINE: {
+          const l = shape as LineShape;
+          lines.push(`G0 X${x.toFixed(3)} Y${y.toFixed(3)}`);
+          lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
+          lines.push(`G1 X${(l.x2 + offsetX).toFixed(3)} Y${(l.y2 + offsetY).toFixed(3)} F${feedRate}`);
+          lines.push(`G0 Z${safeHeight}`);
+          break;
+        }
+
+        case ShapeType.POLYLINE: {
+          const p = shape as PolylineShape;
+          if (p.points.length > 0) {
+              // Points are relative to shape X/Y (which are typically 0 for polyline, but we support offset)
+              const first = p.points[0];
+              lines.push(`G0 X${(first.x + x).toFixed(3)} Y${(first.y + y).toFixed(3)}`);
+              lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
+              for (let i = 1; i < p.points.length; i++) {
+                  const pt = p.points[i];
+                  lines.push(`G1 X${(pt.x + x).toFixed(3)} Y${(pt.y + y).toFixed(3)} F${feedRate}`);
+              }
+              lines.push(`G0 Z${safeHeight}`);
+          }
+          break;
+        }
+
+        case ShapeType.HEART: {
+          const h = shape as HeartShape;
+          const steps = 40;
+          const firstPt = calculateHeartPoint(0, h, x, y);
+          lines.push(`G0 X${firstPt.x.toFixed(3)} Y${firstPt.y.toFixed(3)}`);
+          lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
+          for (let i = 1; i <= steps; i++) {
+              const t = (i / steps) * 2 * Math.PI;
+              const pt = calculateHeartPoint(t, h, x, y);
+              lines.push(`G1 X${pt.x.toFixed(3)} Y${pt.y.toFixed(3)} F${feedRate}`);
+          }
+          lines.push(`G0 Z${safeHeight}`);
+          break;
+        }
+
+        case ShapeType.TEXT: {
+          const textShape = shape as TextShape;
+          lines.push(`; Text: "${textShape.text}"`);
+          let fontToUse = await loadFont(textShape.fontFamily || 'Roboto Mono');
+          
+          if (!fontToUse) {
+               console.warn("Could not load font for text generation.");
+               break;
+          }
+
+          const mirrorMode = textShape.mirrorMode || (textShape.mirror ? MirrorMode.WHOLE : MirrorMode.NONE);
+          
+          if (mirrorMode === MirrorMode.CHAR) {
+            let cursorX = x;
+            for (const char of textShape.text) {
+                const path = fontToUse.getPath(char, cursorX, y, textShape.fontSize);
+                let lastX = 0, lastY = 0, startX = 0, startY = 0;
+                
                 const bbox = path.getBoundingBox();
-                centerX = (bbox.x1 + bbox.x2) / 2;
-            }
-
-            const mx = (val: number) => {
-                if (mirrorMode === MirrorMode.WHOLE) {
-                    // Mirror around shape X
-                    return textShape.x - (val - textShape.x); 
-                } else if (mirrorMode === MirrorMode.CHAR) {
-                    // Flip around char center relative to the char position (offsetX)
-                    // The path coordinates are already offset by OpenType.getPath
-                    // We need to flip the internal coordinate relative to the char's own center
-                    // But actually, path.commands already have absolute coordinates including offsetX.
-                    // So centerX is the center of the character in world space.
-                    return centerX - (val - centerX);
-                }
-                return val;
-            };
-
-            for (const cmd of path.commands) {
-                switch (cmd.type) {
-                    case 'M':
+                const centerX = (bbox.x1 + bbox.x2) / 2;
+                
+                for (const cmd of path.commands) {
+                    const mx = (val: number) => centerX - (val - centerX);
+                    if(cmd.type === 'M') {
                         lines.push(`G0 Z${safeHeight}`);
                         lines.push(`G0 X${mx(cmd.x).toFixed(3)} Y${cmd.y.toFixed(3)}`);
                         lines.push(`G1 Z${-cutDepth} F${feedRate/2}`);
-                        lastX = cmd.x; lastY = cmd.y;
-                        startX = cmd.x; startY = cmd.y;
-                        break;
-                    case 'L':
+                        lastX = cmd.x; lastY = cmd.y; startX = cmd.x; startY = cmd.y;
+                    } else if (cmd.type === 'L') {
                         lines.push(`G1 X${mx(cmd.x).toFixed(3)} Y${cmd.y.toFixed(3)} F${feedRate}`);
-                        lastX = cmd.x; lastY = cmd.y;
-                        break;
-                    case 'C':
-                    case 'Q':
-                        const steps = 5;
-                        for(let i=1; i<=steps; i++) {
-                            const t = i/steps;
-                            let x, y;
-                            if (cmd.type === 'Q') {
-                                x = (1-t)*(1-t)*lastX + 2*(1-t)*t*cmd.x1 + t*t*cmd.x;
-                                y = (1-t)*(1-t)*lastY + 2*(1-t)*t*cmd.y1 + t*t*cmd.y;
-                            } else {
-                                x = Math.pow(1-t,3)*lastX + 3*Math.pow(1-t,2)*t*cmd.x1 + 3*(1-t)*Math.pow(t,2)*cmd.x2 + Math.pow(t,3)*cmd.x;
-                                y = Math.pow(1-t,3)*lastY + 3*Math.pow(1-t,2)*t*cmd.y1 + 3*(1-t)*Math.pow(t,2)*cmd.y2 + Math.pow(t,3)*cmd.y;
-                            }
-                            lines.push(`G1 X${mx(x).toFixed(3)} Y${y.toFixed(3)} F${feedRate}`);
-                        }
-                        lastX = cmd.x; lastY = cmd.y;
-                        break;
-                     case 'Z':
+                         lastX = cmd.x; lastY = cmd.y;
+                    } 
+                    else if (cmd.type === 'Z') {
                         lines.push(`G1 X${mx(startX).toFixed(3)} Y${startY.toFixed(3)} F${feedRate}`);
                         lastX = startX; lastY = startY;
-                        break;
+                    } else if (cmd.type === 'Q' || cmd.type === 'C') {
+                         const steps = 5;
+                        for(let i=1; i<=steps; i++) {
+                            const t = i/steps;
+                            let px, py;
+                            if (cmd.type === 'Q') {
+                                px = (1-t)*(1-t)*lastX + 2*(1-t)*t*cmd.x1 + t*t*cmd.x;
+                                py = (1-t)*(1-t)*lastY + 2*(1-t)*t*cmd.y1 + t*t*cmd.y;
+                            } else {
+                                // @ts-ignore
+                                px = Math.pow(1-t,3)*lastX + 3*Math.pow(1-t,2)*t*cmd.x1 + 3*(1-t)*Math.pow(t,2)*cmd.x2 + Math.pow(t,3)*cmd.x;
+                                // @ts-ignore
+                                py = Math.pow(1-t,3)*lastY + 3*Math.pow(1-t,2)*t*cmd.y1 + 3*(1-t)*Math.pow(t,2)*cmd.y2 + Math.pow(t,3)*cmd.y;
+                            }
+                            lines.push(`G1 X${mx(px).toFixed(3)} Y${py.toFixed(3)} F${feedRate}`);
+                        }
+                        lastX = cmd.x; lastY = cmd.y;
+                    }
                 }
-            }
-            lines.push(`G0 Z${safeHeight}`);
-        };
 
-        if (mirrorMode === MirrorMode.CHAR) {
-            let cursorX = textShape.x;
-            for (const char of textShape.text) {
-                // Get path for single char at cursor
-                const path = fontToUse.getPath(char, cursorX, textShape.y, textShape.fontSize);
-                processPath(path, cursorX);
                 const advance = fontToUse.getAdvanceWidth(char, textShape.fontSize);
                 cursorX += advance + (textShape.letterSpacing || 0);
             }
         } else {
-            const path = fontToUse.getPath(textShape.text, textShape.x, textShape.y, textShape.fontSize, { letterSpacing: textShape.letterSpacing });
-            processPath(path, 0);
+            const path = fontToUse.getPath(textShape.text, x, y, textShape.fontSize, { letterSpacing: textShape.letterSpacing });
+             let lastX = 0, lastY = 0, startX = 0, startY = 0;
+             for (const cmd of path.commands) {
+                 const mx = (val: number) => {
+                    if (mirrorMode === MirrorMode.WHOLE) return x - (val - x);
+                    return val;
+                 };
+                 // Standard processing
+                 if(cmd.type === 'M') {
+                        lines.push(`G0 Z${safeHeight}`);
+                        lines.push(`G0 X${mx(cmd.x).toFixed(3)} Y${cmd.y.toFixed(3)}`);
+                        lines.push(`G1 Z${-cutDepth} F${feedRate/2}`);
+                        lastX = cmd.x; lastY = cmd.y; startX = cmd.x; startY = cmd.y;
+                    } else if (cmd.type === 'L') {
+                        lines.push(`G1 X${mx(cmd.x).toFixed(3)} Y${cmd.y.toFixed(3)} F${feedRate}`);
+                         lastX = cmd.x; lastY = cmd.y;
+                    } else if (cmd.type === 'Z') {
+                        lines.push(`G1 X${mx(startX).toFixed(3)} Y${startY.toFixed(3)} F${feedRate}`);
+                        lastX = startX; lastY = startY;
+                    } else if (cmd.type === 'Q' || cmd.type === 'C') {
+                        const steps = 5;
+                        for(let i=1; i<=steps; i++) {
+                            const t = i/steps;
+                            let px, py;
+                            if (cmd.type === 'Q') {
+                                px = (1-t)*(1-t)*lastX + 2*(1-t)*t*cmd.x1 + t*t*cmd.x;
+                                py = (1-t)*(1-t)*lastY + 2*(1-t)*t*cmd.y1 + t*t*cmd.y;
+                            } else {
+                                // @ts-ignore
+                                px = Math.pow(1-t,3)*lastX + 3*Math.pow(1-t,2)*t*cmd.x1 + 3*(1-t)*Math.pow(t,2)*cmd.x2 + Math.pow(t,3)*cmd.x;
+                                // @ts-ignore
+                                py = Math.pow(1-t,3)*lastY + 3*Math.pow(1-t,2)*t*cmd.y1 + 3*(1-t)*Math.pow(t,2)*cmd.y2 + Math.pow(t,3)*cmd.y;
+                            }
+                            lines.push(`G1 X${mx(px).toFixed(3)} Y${py.toFixed(3)} F${feedRate}`);
+                        }
+                        lastX = cmd.x; lastY = cmd.y;
+                    }
+             }
         }
         break;
-    }
-    lines.push('');
+        }
+      }
+  };
+
+  for (const shape of shapes) {
+    await processShape(shape);
   }
+
+  lines.push('');
   lines.push('M5');
   lines.push('G0 X0 Y0');
   lines.push('M30');
   return lines.join('\n');
 };
 
-function calculateHeartPoint(t: number, shape: HeartShape): {x: number, y: number} {
+function calculateHeartPoint(t: number, shape: HeartShape, xOffset: number, yOffset: number): {x: number, y: number} {
     const hx = 16 * Math.pow(Math.sin(t), 3);
     const hy = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
     const scaleX = shape.width / 32;
     const scaleY = shape.height / 30;
+    // Note: shape.x/y passed here already include offsets
     return {
-        x: shape.x + (hx * scaleX),
-        y: shape.y - (hy * scaleY)
+        x: xOffset + (hx * scaleX),
+        y: yOffset - (hy * scaleY)
     };
 }

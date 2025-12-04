@@ -1,6 +1,6 @@
 
 import React, { useRef } from 'react';
-import { Square, Circle, Type, MousePointer2, Hand, Ruler, Heart, Pen, Minus, LayoutTemplate, ChevronDown, Upload, Download } from 'lucide-react';
+import { Square, Circle, Type, MousePointer2, Hand, Ruler, Heart, Pen, Minus, LayoutTemplate, ChevronDown, Upload, Download, Group, Ungroup } from 'lucide-react';
 import { ShapeType, Tool, Unit } from '../types';
 
 interface ToolPaletteProps {
@@ -16,6 +16,8 @@ interface ToolPaletteProps {
   onClosePalette: () => void;
   onExportSVG: () => void;
   onImportSVG: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onGroup: () => void;
+  onUngroup: () => void;
 }
 
 const ToolPalette: React.FC<ToolPaletteProps> = ({ 
@@ -29,7 +31,9 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
     unit,
     onUnitChange,
     onExportSVG,
-    onImportSVG
+    onImportSVG,
+    onGroup,
+    onUngroup
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -41,7 +45,7 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
       }`;
 
   return (
-    <div className="z-50 bg-slate-900/95 backdrop-blur border-t border-slate-700 shadow-2xl flex fixed bottom-0 left-0 right-0 w-full flex-row items-center p-2 gap-2 overflow-x-auto safe-area-bottom justify-between md:justify-center">
+    <div className="z-30 bg-slate-900/95 backdrop-blur border-t border-slate-700 shadow-2xl flex absolute bottom-0 left-0 right-0 w-full flex-row items-center p-2 gap-2 overflow-x-auto safe-area-bottom justify-between md:justify-center">
       
       <div className="flex gap-2 items-center">
         {/* Tools */}
@@ -78,9 +82,18 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
 
         <div className="w-px h-8 bg-slate-700 mx-1 shrink-0"></div>
 
+        {/* Groups */}
+        <button onClick={onGroup} className={btnClass(false)} title="Group Selected">
+            <Group size={18} />
+        </button>
+        <button onClick={onUngroup} className={btnClass(false)} title="Ungroup">
+            <Ungroup size={18} />
+        </button>
+        
+        <div className="w-px h-8 bg-slate-700 mx-1 shrink-0"></div>
+
         {/* Unit & Actions */}
         <div className="relative group flex items-center">
-            {/* Native Select to ensure it pops out over overflow containers */}
             <div className="relative">
                 <select 
                     value={unit} 
