@@ -58,6 +58,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     const containerRef = useRef<HTMLDivElement>(null);
     const headerRef = useRef<HTMLDivElement>(null);
     const isDraggingRef = useRef(false);
+    const hasDraggedRef = useRef(false);
     const lastMousePosRef = useRef({ x: 0, y: 0 });
     const dragModeRef = useRef<'PAN' | 'ROTATE'>('PAN');
 
@@ -289,6 +290,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
         // Allow all interactions in fullscreen mode (pan, rotate, move)
         e.currentTarget.setPointerCapture(e.pointerId);
         isDraggingRef.current = true;
+        hasDraggedRef.current = false;
         lastMousePosRef.current = { x: e.clientX, y: e.clientY };
         
         // Set drag mode based on mouse button:
@@ -306,6 +308,11 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
         if (!isDraggingRef.current) return;
         const dx = e.clientX - lastMousePosRef.current.x;
         const dy = e.clientY - lastMousePosRef.current.y;
+        
+        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+            hasDraggedRef.current = true;
+        }
+
         lastMousePosRef.current = { x: e.clientX, y: e.clientY };
 
         if (dragModeRef.current === 'ROTATE') {
@@ -370,6 +377,11 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
         });
 
         onUpdateGCode(lines.join('\n'));
+        setSelectedLineIndex(null);
+        setSelectedSegmentIndices([]);
+    };
+
+    const handleClearSelection = () => {
         setSelectedLineIndex(null);
         setSelectedSegmentIndices([]);
     };
@@ -475,6 +487,11 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                     onPointerMove={handlePointerMove}
                     onPointerUp={handlePointerUp}
                     onWheel={handleWheel}
+                    onClick={() => {
+                        if (!hasDraggedRef.current) {
+                            handleClearSelection();
+                        }
+                    }}
                     style={{ transform: `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)` }}
                 >
                     {/* Grid */}
@@ -565,6 +582,13 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                             title="Delete Segment"
                         >
                             <Trash2 size={14} className="pointer-events-none" />
+                        </button></Ripple>
+                        <Ripple><button
+                            onClick={handleClearSelection}
+                            className="p-1 bg-slate-600 hover:bg-slate-500 rounded-full text-white ml-2"
+                            title="Clear Selection"
+                        >
+                            <X size={14} className="pointer-events-none" />
                         </button></Ripple>
                     </div>
                 )}
