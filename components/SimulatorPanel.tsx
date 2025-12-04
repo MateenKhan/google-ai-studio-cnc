@@ -1,5 +1,6 @@
 
 import React, { useMemo, useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Play, X, Rotate3d, Square, ZoomIn, ZoomOut, Move, Trash2, Pause, Maximize2, Minimize2 } from 'lucide-react';
 import { calculateGCodeBounds } from '../utils';
 import { MachineStatus } from '../types';
@@ -281,6 +282,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     };
 
     const handleDeleteSegments = () => {
+        console.log('Delete called, selectedSegmentIndices:', selectedSegmentIndices, 'selectedLineIndex:', selectedLineIndex);
         if (selectedSegmentIndices.length === 0 && selectedLineIndex === null) return;
 
         const lines = gcode.split('\n');
@@ -311,19 +313,24 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     };
 
     const toggleFullscreen = () => {
+        console.log('Fullscreen toggled:', !isFullscreen);
         setIsFullscreen(!isFullscreen);
     };
 
     // Keyboard delete support
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
+            console.log('Key pressed:', e.key, 'selectedSegmentIndices:', selectedSegmentIndices.length);
             if (e.key === 'Delete' || e.key === 'Backspace') {
-                if (selectedLineIndex !== null || selectedSegmentIndices.length > 0) handleDeleteSegments();
+                if (selectedLineIndex !== null || selectedSegmentIndices.length > 0) {
+                    e.preventDefault();
+                    handleDeleteSegments();
+                }
             }
         };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
-    }, [selectedLineIndex, gcode]);
+    }, [selectedLineIndex, selectedSegmentIndices, handleDeleteSegments]);
 
     // Job Handlers
     const handleRunJob = () => {
@@ -348,8 +355,8 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
 
     const mProj = project(parseFloat(machineStatus.pos.x), parseFloat(machineStatus.pos.y), parseFloat(machineStatus.pos.z));
 
-    return (
-        <div className={`flex flex-col h-full bg-slate-900 w-full relative ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}>
+    const content = (
+        <div className={`flex flex-col h-full bg-slate-900 w-full ${isFullscreen ? 'fixed inset-0 z-[9999]' : 'relative'}`}>
             <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800 shrink-0">
                 <h2 className="font-bold text-slate-100 flex items-center gap-2">
                     <Play size={18} /> Simulator & Job
@@ -416,6 +423,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                                     vectorEffect="non-scaling-stroke"
                                     onPointerDown={(e) => {
                                         e.stopPropagation();
+                                        console.log('Path clicked, Ctrl:', e.ctrlKey, 'Index:', i);
                                         if (e.ctrlKey || e.metaKey) {
                                             // Multi-select mode
                                             setSelectedSegmentIndices(prev =>
@@ -550,6 +558,8 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
             </div>
         </div>
     );
+
+    return isFullscreen ? createPortal(content, document.body) : content;
 };
 
 export default SimulatorPanel;
