@@ -25,6 +25,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     // Selection
     const [selectedLineIndex, setSelectedLineIndex] = useState<number | null>(null);
     const [selectedSegmentIndices, setSelectedSegmentIndices] = useState<number[]>([]);
+    const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null);
 
     // Fullscreen
     const [isFloating, setIsFloating] = useState(false);
@@ -514,13 +515,35 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                                                 onPointerDown={(e) => {
                                                     e.stopPropagation();
                                                     console.log('Path clicked (Hit Area), Index:', i);
-                                                    if (e.ctrlKey || e.metaKey) {
+
+                                                    if (e.shiftKey && lastClickedIndex !== null) {
+                                                        // Range Selection
+                                                        const start = Math.min(lastClickedIndex, i);
+                                                        const end = Math.max(lastClickedIndex, i);
+                                                        const range = Array.from({ length: end - start + 1 }, (_, k) => k + start);
+
+                                                        if (e.ctrlKey || e.metaKey) {
+                                                            // Add range to existing
+                                                            setSelectedSegmentIndices(prev => {
+                                                                const newSet = new Set([...prev, ...range]);
+                                                                return Array.from(newSet);
+                                                            });
+                                                        } else {
+                                                            // Replace with range
+                                                            setSelectedSegmentIndices(range);
+                                                            setSelectedLineIndex(null);
+                                                        }
+                                                    } else if (e.ctrlKey || e.metaKey) {
+                                                        // Multi-select toggle
                                                         setSelectedSegmentIndices(prev =>
                                                             prev.includes(i) ? prev.filter(idx => idx !== i) : [...prev, i]
                                                         );
+                                                        setLastClickedIndex(i);
                                                     } else {
+                                                        // Single select
                                                         setSelectedLineIndex(seg.lineIndex);
                                                         setSelectedSegmentIndices([i]);
+                                                        setLastClickedIndex(i);
                                                     }
                                                 }}
                                                 className="cursor-pointer"
