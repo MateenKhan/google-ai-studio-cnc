@@ -286,9 +286,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
             return;
         }
         
-        // For all other interactions in fullscreen mode, prevent drag/pan
-        if (isFullscreen) return;
-        
+        // Allow all interactions in fullscreen mode (pan, rotate, move)
         e.currentTarget.setPointerCapture(e.pointerId);
         isDraggingRef.current = true;
         lastMousePosRef.current = { x: e.clientX, y: e.clientY };
@@ -304,9 +302,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     };
 
     const handlePointerMove = (e: React.PointerEvent) => {
-        // Don't handle drag/pan events when in fullscreen mode
-        if (isFullscreen) return;
-        
+        // Allow all interactions in fullscreen mode (pan, rotate, move)
         if (!isDraggingRef.current) return;
         const dx = e.clientX - lastMousePosRef.current.x;
         const dy = e.clientY - lastMousePosRef.current.y;
@@ -326,17 +322,13 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     };
 
     const handlePointerUp = (e: React.PointerEvent) => {
-        // Don't handle drag/pan events when in fullscreen mode
-        if (isFullscreen) return;
-        
+        // Allow all interactions in fullscreen mode (pan, rotate, move)
         isDraggingRef.current = false;
         e.currentTarget.releasePointerCapture(e.pointerId);
     };
 
     const handleWheel = (e: React.WheelEvent) => {
-        // Don't handle wheel events when in fullscreen mode
-        if (isFullscreen) return;
-        
+        // Allow zoom in fullscreen mode
         const zoomFactor = 1.1;
         setZoom(z => e.deltaY > 0 ? z / zoomFactor : z * zoomFactor);
     };
