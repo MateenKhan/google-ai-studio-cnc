@@ -534,7 +534,10 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                         </div>
 
                         {(selectedLineIndex !== null || selectedSegmentIndices.length > 0) && (
-                            <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-slate-800 p-2 rounded-full border border-slate-600 shadow-xl z-10">
+                            <div
+                                className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-slate-800 p-2 rounded-full border border-slate-600 shadow-xl z-10"
+                                onPointerDown={(e) => e.stopPropagation()}
+                            >
                                 <span className="text-xs text-slate-300 pl-2">
                                     {selectedSegmentIndices.length > 1
                                         ? `${selectedSegmentIndices.length} Segments Selected`
