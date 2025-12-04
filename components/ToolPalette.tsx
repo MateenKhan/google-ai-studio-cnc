@@ -2,6 +2,7 @@
 import React, { useRef } from 'react';
 import { Square, Circle, Type, MousePointer2, Hand, Ruler, Heart, Pen, Minus, LayoutTemplate, ChevronDown, Upload, Download, Group, Ungroup } from 'lucide-react';
 import { ShapeType, Tool, Unit } from '../types';
+import Ripple from './Ripple';
 
 interface ToolPaletteProps {
   activeTool: Tool;
@@ -49,46 +50,46 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
       
       <div className="flex gap-2 items-center">
         {/* Tools */}
-        <button onClick={() => onSelectTool(Tool.SELECT)} className={btnClass(activeTool === Tool.SELECT)} title="Select">
+        <Ripple><button onClick={() => onSelectTool(Tool.SELECT)} className={btnClass(activeTool === Tool.SELECT)} title="Select">
              <MousePointer2 size={18} />
-        </button>
-        <button onClick={() => onSelectTool(Tool.PAN)} className={btnClass(activeTool === Tool.PAN)} title="Pan">
+        </button></Ripple>
+        <Ripple><button onClick={() => onSelectTool(Tool.PAN)} className={btnClass(activeTool === Tool.PAN)} title="Pan">
              <Hand size={18} />
-        </button>
-        <button onClick={onToggleDimensions} className={btnClass(showDimensions)} title="Dimensions">
+        </button></Ripple>
+        <Ripple><button onClick={onToggleDimensions} className={btnClass(showDimensions)} title="Dimensions">
              <Ruler size={18} />
-        </button>
+        </button></Ripple>
         <div className="w-px h-8 bg-slate-700 mx-1 shrink-0"></div>
 
         {/* Shapes */}
-        <button onClick={() => onAddShape(ShapeType.RECTANGLE)} className={btnClass(false)} title="Rectangle">
+        <Ripple><button onClick={() => onAddShape(ShapeType.RECTANGLE)} className={btnClass(false)} title="Rectangle">
              <Square size={18} />
-        </button>
-        <button onClick={() => onAddShape(ShapeType.CIRCLE)} className={btnClass(false)} title="Circle">
+        </button></Ripple>
+        <Ripple><button onClick={() => onAddShape(ShapeType.CIRCLE)} className={btnClass(false)} title="Circle">
              <Circle size={18} />
-        </button>
-        <button onClick={() => onAddShape(ShapeType.HEART)} className={btnClass(false)} title="Heart">
+        </button></Ripple>
+        <Ripple><button onClick={() => onAddShape(ShapeType.HEART)} className={btnClass(false)} title="Heart">
              <Heart size={18} />
-        </button>
-        <button onClick={() => onSelectTool(Tool.LINE_CREATE)} className={btnClass(activeTool === Tool.LINE_CREATE)} title="Draw Straight Line">
+        </button></Ripple>
+        <Ripple><button onClick={() => onSelectTool(Tool.LINE_CREATE)} className={btnClass(activeTool === Tool.LINE_CREATE)} title="Draw Straight Line">
              <Minus size={18} className="rotate-45" />
-        </button>
-        <button onClick={() => onSelectTool(Tool.PEN)} className={btnClass(activeTool === Tool.PEN)} title="Free Draw (Pen)">
+        </button></Ripple>
+        <Ripple><button onClick={() => onSelectTool(Tool.PEN)} className={btnClass(activeTool === Tool.PEN)} title="Free Draw (Pen)">
              <Pen size={18} />
-        </button>
-         <button onClick={() => onAddShape(ShapeType.TEXT)} className={btnClass(false)} title="Text">
+        </button></Ripple>
+         <Ripple><button onClick={() => onAddShape(ShapeType.TEXT)} className={btnClass(false)} title="Text">
              <Type size={18} />
-        </button>
+        </button></Ripple>
 
         <div className="w-px h-8 bg-slate-700 mx-1 shrink-0"></div>
 
         {/* Groups */}
-        <button onClick={onGroup} className={btnClass(false)} title="Group Selected">
+        <Ripple><button onClick={onGroup} className={btnClass(false)} title="Group Selected">
             <Group size={18} />
-        </button>
-        <button onClick={onUngroup} className={btnClass(false)} title="Ungroup">
+        </button></Ripple>
+        <Ripple><button onClick={onUngroup} className={btnClass(false)} title="Ungroup">
             <Ungroup size={18} />
-        </button>
+        </button></Ripple>
         
         <div className="w-px h-8 bg-slate-700 mx-1 shrink-0"></div>
 
@@ -110,23 +111,23 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
             </div>
         </div>
         
-        <button onClick={() => fileInputRef.current?.click()} className={btnClass(false)} title="Import SVG">
+        <Ripple><button onClick={() => fileInputRef.current?.click()} className={btnClass(false)} title="Import SVG">
              <Upload size={18} />
              <input type="file" ref={fileInputRef} onChange={onImportSVG} accept=".svg" className="hidden" />
-        </button>
-        <button onClick={onExportSVG} className={btnClass(false)} title="Export SVG">
+        </button></Ripple>
+        <Ripple><button onClick={onExportSVG} className={btnClass(false)} title="Export SVG">
              <Download size={18} />
-        </button>
+        </button></Ripple>
       </div>
 
       <div className="flex gap-2 items-center">
-         <button 
+         <Ripple><button 
             onClick={onToggleSidebar} 
             className={btnClass(isSidebarOpen)} 
             title="Toggle Properties"
         >
              <LayoutTemplate size={18} />
-        </button>
+        </button></Ripple>
       </div>
 
     </div>

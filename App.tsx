@@ -10,6 +10,7 @@ import LogsPanel from './components/LogsPanel';
 import GrblSettingsPanel from './components/GrblSettingsPanel';
 import SimulatorPanel from './components/SimulatorPanel';
 import CalibrationHelper from './components/CalibrationHelper';
+import Ripple from './components/Ripple';
 import { Shape, ShapeType, MachineSettings, Tool, Unit, GroupShape, MachineStatus } from './types';
 import { generateGCode } from './services/gcodeService';
 // import { explainGCode } from './services/geminiService';
@@ -27,7 +28,7 @@ const DEFAULT_SETTINGS: MachineSettings = {
 const MIN_PANEL_WIDTH = 300;
 const MAX_PANEL_WIDTH = 800;
 
-type Tab = 'properties' | 'gcode' | 'machine' | 'logs' | 'grbl' | 'simulator';
+type Tab = 'properties' | 'machine' | 'logs' | 'grbl' | 'simulator';
 
 const App: React.FC = () => {
   const [shapes, setShapes] = useState<Shape[]>([]);
@@ -385,20 +386,22 @@ const App: React.FC = () => {
   };
 
   const TabButton = ({ id, label, icon: Icon }: { id: Tab, label: string, icon: any }) => (
-    <button
-      onClick={() => setActiveTab(id)}
-      className={`flex-1 py-3 px-2 flex items-center justify-center gap-2 text-sm font-medium transition-colors relative min-w-[60px] md:min-w-[80px] ${activeTab === id
-        ? 'text-sky-400 bg-slate-800'
-        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-        }`}
-      title={label}
-    >
-      <Icon size={16} />
-      <span className="hidden lg:inline whitespace-nowrap">{label}</span>
-      {activeTab === id && (
-        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-400" />
-      )}
-    </button>
+    <Ripple>
+      <button
+        onClick={() => setActiveTab(id)}
+        className={`flex-1 py-3 px-2 flex items-center justify-center gap-2 text-sm font-medium transition-colors relative min-w-[60px] md:min-w-[80px] ${activeTab === id
+          ? 'text-sky-400 bg-slate-800'
+          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+          }`}
+        title={label}
+      >
+        <Icon size={16} />
+        <span className="hidden lg:inline whitespace-nowrap">{label}</span>
+        {activeTab === id && (
+          <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-400" />
+        )}
+      </button>
+    </Ripple>
   );
 
   return (
@@ -453,7 +456,6 @@ const App: React.FC = () => {
 
             <div className="flex border-b border-slate-700 bg-slate-900 shrink-0 overflow-x-auto no-scrollbar">
               <TabButton id="properties" label="Design" icon={Layers} />
-              <TabButton id="gcode" label="Code" icon={FileCode} />
               <TabButton id="simulator" label="Sim" icon={Play} />
               <TabButton id="machine" label="Control" icon={Settings} />
               <TabButton id="grbl" label="GRBL" icon={Cpu} />
@@ -483,17 +485,6 @@ const App: React.FC = () => {
                 </div>
               )}
 
-              {activeTab === 'gcode' && (
-                <CodeEditor
-                  code={gcode}
-                  onChange={handleCodeChange}
-                  onRegenerate={() => setIsManualMode(false)}
-                  isManualMode={isManualMode}
-                  generateOnlySelected={generateOnlySelected}
-                  onToggleGenerateOnlySelected={() => setGenerateOnlySelected(!generateOnlySelected)}
-                />
-              )}
-
               {activeTab === 'simulator' && (
                 <SimulatorPanel
                   gcode={gcode}
@@ -503,6 +494,8 @@ const App: React.FC = () => {
                   isConnected={isMachineConnected}
                   isManualMode={isManualMode}
                   onRegenerate={() => setIsManualMode(false)}
+                  generateOnlySelected={generateOnlySelected}
+                  onToggleGenerateOnlySelected={() => setGenerateOnlySelected(!generateOnlySelected)}
                 />
               )}
 

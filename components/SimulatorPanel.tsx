@@ -1,10 +1,12 @@
 
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Play, X, Rotate3d, Square, ZoomIn, ZoomOut, Move, Trash2, Pause, Maximize2, Minimize2 } from 'lucide-react';
+import { Play, X, Rotate3d, Square, ZoomIn, ZoomOut, Move, Trash2, Pause, Maximize2, Minimize2, ChevronDown, ChevronRight } from 'lucide-react';
 import { calculateGCodeBounds } from '../utils';
 import { MachineStatus } from '../types';
 import { serialService } from '../services/serialService';
+import CodeEditor from './CodeEditor';
+import Ripple from './Ripple';
 
 interface SimulatorPanelProps {
     gcode: string;
@@ -14,13 +16,18 @@ interface SimulatorPanelProps {
     isConnected: boolean;
     isManualMode?: boolean;
     onRegenerate?: () => void;
+    generateOnlySelected?: boolean;
+    onToggleGenerateOnlySelected?: () => void;
 }
 
-const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, onClose, machineStatus, isConnected, isManualMode, onRegenerate }) => {
+const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, onClose, machineStatus, isConnected, isManualMode, onRegenerate, generateOnlySelected, onToggleGenerateOnlySelected }) => {
     const [viewMode, setViewMode] = useState<'3D' | '2D'>('3D');
     const [zoom, setZoom] = useState(1);
     const [pan, setPan] = useState({ x: 0, y: 0 });
     const [rotation, setRotation] = useState({ x: 60, z: 45 }); // Degrees
+
+    // G-Code Accordion State
+    const [isGCodeExpanded, setIsGCodeExpanded] = useState(false);
 
     // Selection
     const [selectedLineIndex, setSelectedLineIndex] = useState<number | null>(null);
@@ -435,32 +442,32 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                 </h2>
                 <div className="flex gap-2" onPointerDown={e => e.stopPropagation()}>
                     {isManualMode && (
-                        <button
+                        <Ripple><button
                             onClick={onRegenerate}
                             className="px-2 py-1 text-xs bg-yellow-600 hover:bg-yellow-500 text-white rounded flex items-center gap-1 animate-pulse"
                             title="G-code is manually edited. Click to sync with Canvas."
                         >
                             <Rotate3d size={12} /> Sync
-                        </button>
+                        </button></Ripple>
                     )}
-                    <button onClick={() => { setPan({ x: 0, y: 0 }); setZoom(1); }} className="p-1.5 text-slate-400 hover:text-white bg-slate-700 rounded" title="Reset View">
+                    <Ripple><button onClick={() => { setPan({ x: 0, y: 0 }); setZoom(1); }} className="p-1.5 text-slate-400 hover:text-white bg-slate-700 rounded" title="Reset View">
                         <Move size={16} />
-                    </button>
-                    <button onClick={() => setViewMode(v => v === '3D' ? '2D' : '3D')} className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-700 rounded" title="Toggle 3D/2D">
+                    </button></Ripple>
+                    <Ripple><button onClick={() => setViewMode(v => v === '3D' ? '2D' : '3D')} className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-700 rounded" title="Toggle 3D/2D">
                         {viewMode === '3D' ? <Square size={16} /> : <Rotate3d size={16} />}
-                    </button>
-                    <button onClick={toggleFullscreen} className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-700 rounded" title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}>
+                    </button></Ripple>
+                    <Ripple><button onClick={toggleFullscreen} className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-700 rounded" title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}>
                         {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-                    </button>
-                    <button onClick={toggleFloating} className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-700 rounded" title={isFloating ? "Dock" : "Popout"}>
+                    </button></Ripple>
+                    <Ripple><button onClick={toggleFloating} className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-700 rounded" title={isFloating ? "Dock" : "Popout"}>
                         {isFloating ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-                    </button>
+                    </button></Ripple>
                     {isFloating && (
-                        <button onClick={() => setIsMinimized(!isMinimized)} className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-700 rounded" title={isMinimized ? "Expand" : "Minimize"}>
+                        <Ripple><button onClick={() => setIsMinimized(!isMinimized)} className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-700 rounded" title={isMinimized ? "Expand" : "Minimize"}>
                             {isMinimized ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
-                        </button>
+                        </button></Ripple>
                     )}
-                    <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={18} /></button>
+                    <Ripple><button onClick={onClose} className="text-slate-400 hover:text-white"><X size={18} /></button></Ripple>
                 </div>
             </div>
 
@@ -597,28 +604,28 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                                             ? `Line ${selectedLineIndex + 1} Selected`
                                             : '1 Segment Selected'}
                                 </span>
-                                <button
+                                <Ripple><button
                                     onClick={handleDeleteSegments}
                                     className="p-1 bg-red-600 hover:bg-red-500 rounded-full text-white"
                                     title="Delete Segment"
                                 >
                                     <Trash2 size={14} className="pointer-events-none" />
-                                </button>
+                                </button></Ripple>
                             </div>
                         )}
                     </div>
 
                     {/* Simulation Controls */}
                     <div className="bg-slate-800 border-t border-slate-700 p-2 shrink-0 z-20 flex items-center gap-4 px-4">
-                        <button
+                        <Ripple><button
                             onClick={handleToggleSimulation}
                             className={`p-2 rounded-full ${isSimulating ? 'bg-yellow-600 text-white' : 'bg-sky-600 text-white'} hover:opacity-90`}
                         >
                             {isSimulating ? <Pause size={16} /> : <Play size={16} />}
-                        </button>
-                        <button onClick={handleSimStop} className="p-2 text-slate-400 hover:text-white">
+                        </button></Ripple>
+                        <Ripple><button onClick={handleSimStop} className="p-2 text-slate-400 hover:text-white">
                             <Square size={16} />
-                        </button>
+                        </button></Ripple>
 
                         <div className="flex-1 flex flex-col gap-1">
                             <div className="flex justify-between text-xs text-slate-400">
@@ -667,17 +674,53 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                             </div>
                         )}
                         <div className="flex gap-2">
-                            <button onClick={handleRunJob} disabled={!gcode || !isConnected || isJobRunning} className="flex-1 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center gap-2 text-white font-medium">
+                            <Ripple disabled={!gcode || !isConnected || isJobRunning}><button onClick={handleRunJob} disabled={!gcode || !isConnected || isJobRunning} className="flex-1 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center gap-2 text-white font-medium">
                                 <Play size={16} /> Run on Machine
-                            </button>
-                            <button onClick={handlePauseJob} disabled={!isConnected || !isJobRunning} className="px-4 py-2 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center text-white">
+                            </button></Ripple>
+                            <Ripple disabled={!isConnected || !isJobRunning}><button onClick={handlePauseJob} disabled={!isConnected || !isJobRunning} className="px-4 py-2 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center text-white">
                                 <Pause size={16} />
-                            </button>
-                            <button onClick={handleStopJob} disabled={!isConnected || (!isJobRunning && jobProgress === 0)} className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center text-white">
+                            </button></Ripple>
+                            <Ripple disabled={!isConnected || (!isJobRunning && jobProgress === 0)}><button onClick={handleStopJob} disabled={!isConnected || (!isJobRunning && jobProgress === 0)} className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center text-white">
                                 <Square size={16} />
-                            </button>
+                            </button></Ripple>
                         </div>
                         {!isConnected && <div className="text-center text-xs text-red-400 mt-2">Machine Disconnected</div>}
+                    </div>
+
+                    {/* G-Code Accordion Section */}
+                    <div className="bg-slate-900 border-t border-slate-800 shrink-0">
+                        <Ripple><button
+                            onClick={() => setIsGCodeExpanded(!isGCodeExpanded)}
+                            className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-800/50 transition-colors cursor-pointer"
+                            aria-expanded={isGCodeExpanded}
+                            aria-controls="gcode-accordion-content"
+                        >
+                            <h3 className="text-sm font-semibold text-slate-300 uppercase flex items-center gap-2">
+                                {isGCodeExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                                G-Code Editor
+                            </h3>
+                            {isManualMode && (
+                                <span className="text-xs text-yellow-500 bg-yellow-900/20 px-2 py-1 rounded">Manual Mode</span>
+                            )}
+                        </button></Ripple>
+                        <div
+                            id="gcode-accordion-content"
+                            className="overflow-hidden transition-all duration-300 ease-in-out"
+                            style={{
+                                maxHeight: isGCodeExpanded ? '400px' : '0px'
+                            }}
+                        >
+                            <div className="border-t border-slate-800">
+                                <CodeEditor
+                                    code={gcode}
+                                    onChange={onUpdateGCode}
+                                    onRegenerate={onRegenerate || (() => { })}
+                                    isManualMode={isManualMode || false}
+                                    generateOnlySelected={generateOnlySelected}
+                                    onToggleGenerateOnlySelected={onToggleGenerateOnlySelected}
+                                />
+                            </div>
+                        </div>
                     </div>
                 </>
             )}

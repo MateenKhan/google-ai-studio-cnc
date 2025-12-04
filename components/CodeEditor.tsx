@@ -1,12 +1,12 @@
 
 import React, { useState, useRef } from 'react';
-import { Download, RefreshCw, MessageSquare, Copy, Check, Filter, Upload } from 'lucide-react';
+import { Download, RefreshCw, Copy, Check, Filter, Upload } from 'lucide-react';
+import Ripple from './Ripple';
 
 interface CodeEditorProps {
   code: string;
   onChange: (code: string) => void;
   onRegenerate: () => void;
-  onExplain: () => void;
   isManualMode: boolean;
   generateOnlySelected?: boolean;
   onToggleGenerateOnlySelected?: () => void;
@@ -16,7 +16,6 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
     code, 
     onChange, 
     onRegenerate, 
-    onExplain, 
     isManualMode,
     generateOnlySelected,
     onToggleGenerateOnlySelected
@@ -59,54 +58,47 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
         <h3 className="font-semibold text-slate-200">G-Code</h3>
         <div className="flex gap-2 items-center">
             {onToggleGenerateOnlySelected && (
-                <button 
+                <Ripple><button 
                     onClick={onToggleGenerateOnlySelected}
                     className={`p-1.5 rounded transition-colors ${generateOnlySelected ? 'text-sky-400 bg-sky-900/30' : 'text-slate-400 hover:bg-slate-800'}`}
                     title="Generate Code for Selected Items Only"
                 >
                     <Filter size={16} />
-                </button>
+                </button></Ripple>
             )}
             
-            <button 
+            <Ripple><button 
                 onClick={() => fileInputRef.current?.click()} 
                 className="p-1.5 text-slate-400 hover:text-sky-400 hover:bg-slate-800 rounded transition-colors"
                 title="Upload G-Code"
             >
                 <Upload size={16} />
                 <input type="file" ref={fileInputRef} onChange={handleUpload} accept=".gcode,.nc,.txt" className="hidden" />
-            </button>
+            </button></Ripple>
 
-            <button 
+            <Ripple><button 
                 onClick={handleCopy} 
                 className="p-1.5 text-slate-400 hover:text-green-400 hover:bg-slate-800 rounded transition-colors"
                 title="Copy to Clipboard"
             >
                 {copied ? <Check size={16} /> : <Copy size={16} />}
-            </button>
-            <button 
-                onClick={onExplain} 
-                className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded transition-colors"
-                title="Explain with AI"
-            >
-                <MessageSquare size={16} />
-            </button>
-            <button 
+            </button></Ripple>
+            <Ripple><button 
                 onClick={handleDownload} 
                 className="p-1.5 text-slate-400 hover:text-sky-400 hover:bg-slate-800 rounded transition-colors"
                 title="Download .gcode"
             >
                 <Download size={16} />
-            </button>
+            </button></Ripple>
         </div>
       </div>
       
       {isManualMode && (
          <div className="bg-yellow-900/20 text-yellow-500 text-xs px-4 py-1 flex items-center justify-between border-b border-yellow-900/30">
             <span>Manual Edits / Upload Active</span>
-            <button onClick={onRegenerate} className="flex items-center gap-1 hover:text-yellow-300">
+            <Ripple><button onClick={onRegenerate} className="flex items-center gap-1 hover:text-yellow-300">
                 <RefreshCw size={10} /> Reset to Design
-            </button>
+            </button></Ripple>
          </div>
       )}
 
