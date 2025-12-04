@@ -21,6 +21,7 @@ interface CanvasProps {
     canvasHeight: number;
     gridSize: number;
     onShapeChangeStart?: () => void;
+    onToggleGroup?: (groupId: string) => void;
 }
 
 const Canvas: React.FC<CanvasProps> = ({
@@ -38,7 +39,8 @@ const Canvas: React.FC<CanvasProps> = ({
     canvasWidth,
     canvasHeight,
     gridSize,
-    onShapeChangeStart
+    onShapeChangeStart,
+    onToggleGroup
 }) => {
     const svgRef = useRef<SVGSVGElement>(null);
     const [isDragging, setIsDragging] = useState(false);
@@ -523,9 +525,109 @@ const Canvas: React.FC<CanvasProps> = ({
 
         if (shape.type === ShapeType.GROUP) {
             const g = shape as GroupShape;
+            const isCollapsed = g.collapsed || false;
+            const toggleSize = 20 / zoom;
+            const iconSize = 14 / zoom;
+
+            // Calculate bounding box for the group
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            g.children.forEach(child => {
+                if (child.type === ShapeType.RECTANGLE) {
+                    const r = child as RectangleShape;
+                    minX = Math.min(minX, child.x);
+                    minY = Math.min(minY, child.y);
+                    maxX = Math.max(maxX, child.x + r.width);
+                    maxY = Math.max(maxY, child.y + r.height);
+                } else if (child.type === ShapeType.CIRCLE) {
+                    const c = child as CircleShape;
+                    minX = Math.min(minX, child.x - c.radius);
+                    minY = Math.min(minY, child.y - c.radius);
+                    maxX = Math.max(maxX, child.x + c.radius);
+                    maxY = Math.max(maxY, child.y + c.radius);
+                } else {
+                    minX = Math.min(minX, child.x);
+                    minY = Math.min(minY, child.y);
+                    maxX = Math.max(maxX, child.x + 50);
+                    maxY = Math.max(maxY, child.y + 50);
+                }
+            });
+
             return (
                 <g key={g.id} transform={`translate(${g.x}, ${g.y})`}>
-                    {g.children.map(child => renderShape(child, g.id))}
+                    {/* Toggle button */}
+                    <g
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleGroup?.(g.id);
+                        }}
+                        style={{ cursor: 'pointer' }}
+                        className="hover:opacity-80"
+                    >
+                        <circle
+                            cx={minX - toggleSize / 2}
+                            cy={minY - toggleSize / 2}
+                            r={toggleSize / 2}
+                            fill="#1e293b"
+                            stroke={isSelected ? "#38bdf8" : "#64748b"}
+                            strokeWidth={1.5 / zoom}
+                        />
+                        {/* Chevron icon */}
+                        {isCollapsed ? (
+                            // ChevronRight
+                            <path
+                                d={`M ${minX - toggleSize / 2 - iconSize / 4} ${minY - toggleSize / 2 - iconSize / 2} L ${minX - toggleSize / 2 + iconSize / 4} ${minY - toggleSize / 2} L ${minX - toggleSize / 2 - iconSize / 4} ${minY - toggleSize / 2 + iconSize / 2}`}
+                                fill="none"
+                                stroke={isSelected ? "#38bdf8" : "#94a3b8"}
+                                strokeWidth={2 / zoom}
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            />
+                        ) : (
+                            // ChevronDown
+                            <path
+                                d={`M ${minX - toggleSize / 2 - iconSize / 2} ${minY - toggleSize / 2 - iconSize / 4} L ${minX - toggleSize / 2} ${minY - toggleSize / 2 + iconSize / 4} L ${minX - toggleSize / 2 + iconSize / 2} ${minY - toggleSize / 2 - iconSize / 4}`}
+                                fill="none"
+                                stroke={isSelected ? "#38bdf8" : "#94a3b8"}
+                                strokeWidth={2 / zoom}
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            />
+                        )}
+                    </g>
+
+                    {/* Group outline */}
+                    {!isCollapsed && (
+                        <rect
+                            x={minX - 5 / zoom}
+                            y={minY - 5 / zoom}
+                            width={maxX - minX + 10 / zoom}
+                            height={maxY - minY + 10 / zoom}
+                            fill="none"
+                            stroke={isSelected ? "#38bdf8" : "#64748b"}
+                            strokeWidth={1 / zoom}
+                            strokeDasharray={`${4 / zoom} ${2 / zoom}`}
+                            opacity="0.5"
+                            pointerEvents="none"
+                        />
+                    )}
+
+                    {/* Children - only render if not collapsed */}
+                    {!isCollapsed && g.children.map(child => renderShape(child, g.id))}
+
+                    {/* Collapsed placeholder */}
+                    {isCollapsed && (
+                        <rect
+                            x={minX}
+                            y={minY}
+                            width={Math.max(50, maxX - minX)}
+                            height={Math.max(30, maxY - minY)}
+                            fill="rgba(100, 116, 139, 0.1)"
+                            stroke={isSelected ? "#38bdf8" : "#64748b"}
+                            strokeWidth={1.5 / zoom}
+                            strokeDasharray={`${4 / zoom} ${2 / zoom}`}
+                            {...commonProps}
+                        />
+                    )}
                 </g>
             );
         }

@@ -318,6 +318,18 @@ const App: React.FC = () => {
     setSelectedIds(children.map(c => c.id));
   };
 
+  const handleToggleGroup = (groupId: string) => {
+    setShapes(prev => prev.map(s => {
+      if (s.id === groupId && s.type === ShapeType.GROUP) {
+        return {
+          ...s,
+          collapsed: !(s as GroupShape).collapsed
+        } as GroupShape;
+      }
+      return s;
+    }));
+  };
+
   const handleCodeChange = (newCode: string) => { setGcode(newCode); setIsManualMode(true); };
   // const handleExplain = async () => { if (gcode) alert(await explainGCode(gcode)); };
 

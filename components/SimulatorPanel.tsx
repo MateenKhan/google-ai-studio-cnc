@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState, useRef, useEffect } from 'react';
-import { Play, X, Rotate3d, Square, ZoomIn, ZoomOut, Move, Trash2, Pause } from 'lucide-react';
+import { Play, X, Rotate3d, Square, ZoomIn, ZoomOut, Move, Trash2, Pause, Maximize2, Minimize2 } from 'lucide-react';
 import { calculateGCodeBounds } from '../utils';
 import { MachineStatus } from '../types';
 import { serialService } from '../services/serialService';
@@ -21,6 +21,10 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
 
     // Selection
     const [selectedLineIndex, setSelectedLineIndex] = useState<number | null>(null);
+    const [selectedSegmentIndices, setSelectedSegmentIndices] = useState<number[]>([]);
+
+    // Fullscreen
+    const [isFullscreen, setIsFullscreen] = useState(false);
 
     // Job State
     const [jobProgress, setJobProgress] = useState(0);
@@ -202,9 +206,6 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
         };
     };
 
-    const simPoint = getPointAtProgress(simProgress);
-    const simProj = project(simPoint.x, simPoint.y, simPoint.z);
-
     // 3D Projection Helper
     function project(x: number, y: number, z: number) {
         // Center points first
@@ -229,6 +230,9 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
 
         return { x: x1, y: y2 };
     };
+
+    const simPoint = getPointAtProgress(simProgress);
+    const simProj = project(simPoint.x, simPoint.y, simPoint.z);
 
     const scaleRef = Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY) || 100;
     // ViewBox: centered 0,0 with dynamic size
@@ -276,21 +280,45 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
         setZoom(z => e.deltaY > 0 ? z / zoomFactor : z * zoomFactor);
     };
 
-    const handleDeleteSegment = () => {
+    const handleDeleteSegments = () => {
+        if (selectedSegmentIndices.length === 0 && selectedLineIndex === null) return;
+
+        const lines = gcode.split('\n');
+        const linesToDelete = new Set<number>();
+
+        // Collect all line indices to delete
         if (selectedLineIndex !== null) {
-            const lines = gcode.split('\n');
-            // Remove the line. Note: this might break context if it's modal, but for simple G-code editors it's usually fine.
-            lines.splice(selectedLineIndex, 1);
-            onUpdateGCode(lines.join('\n'));
-            setSelectedLineIndex(null);
+            linesToDelete.add(selectedLineIndex);
         }
+
+        selectedSegmentIndices.forEach(segIdx => {
+            if (segIdx < segments.length) {
+                linesToDelete.add(segments[segIdx].lineIndex);
+            }
+        });
+
+        // Remove lines in reverse order to maintain indices
+        const sortedIndices = Array.from(linesToDelete).sort((a, b) => b - a);
+        sortedIndices.forEach(idx => {
+            if (idx < lines.length) {
+                lines.splice(idx, 1);
+            }
+        });
+
+        onUpdateGCode(lines.join('\n'));
+        setSelectedLineIndex(null);
+        setSelectedSegmentIndices([]);
+    };
+
+    const toggleFullscreen = () => {
+        setIsFullscreen(!isFullscreen);
     };
 
     // Keyboard delete support
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
             if (e.key === 'Delete' || e.key === 'Backspace') {
-                if (selectedLineIndex !== null) handleDeleteSegment();
+                if (selectedLineIndex !== null || selectedSegmentIndices.length > 0) handleDeleteSegments();
             }
         };
         window.addEventListener('keydown', onKey);
@@ -321,7 +349,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     const mProj = project(parseFloat(machineStatus.pos.x), parseFloat(machineStatus.pos.y), parseFloat(machineStatus.pos.z));
 
     return (
-        <div className="flex flex-col h-full bg-slate-900 w-full relative">
+        <div className={`flex flex-col h-full bg-slate-900 w-full relative ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}>
             <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800 shrink-0">
                 <h2 className="font-bold text-slate-100 flex items-center gap-2">
                     <Play size={18} /> Simulator & Job
@@ -332,6 +360,9 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                     </button>
                     <button onClick={() => setViewMode(v => v === '3D' ? '2D' : '3D')} className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-700 rounded" title="Toggle 3D/2D">
                         {viewMode === '3D' ? <Square size={16} /> : <Rotate3d size={16} />}
+                    </button>
+                    <button onClick={toggleFullscreen} className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-700 rounded" title="Toggle Fullscreen">
+                        {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
                     </button>
                     <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={18} /></button>
                 </div>
@@ -373,7 +404,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                             const p1 = project(seg.x1, seg.y1, seg.z1);
                             const p2 = project(seg.x2, seg.y2, seg.z2);
                             const isRapid = seg.type === 'G0';
-                            const isSelected = selectedLineIndex === seg.lineIndex;
+                            const isSelected = selectedLineIndex === seg.lineIndex || selectedSegmentIndices.includes(i);
                             return (
                                 <line
                                     key={i}
@@ -385,7 +416,18 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                                     vectorEffect="non-scaling-stroke"
                                     onPointerDown={(e) => {
                                         e.stopPropagation();
-                                        setSelectedLineIndex(seg.lineIndex);
+                                        if (e.ctrlKey || e.metaKey) {
+                                            // Multi-select mode
+                                            setSelectedSegmentIndices(prev =>
+                                                prev.includes(i)
+                                                    ? prev.filter(idx => idx !== i)
+                                                    : [...prev, i]
+                                            );
+                                        } else {
+                                            // Single select mode
+                                            setSelectedLineIndex(seg.lineIndex);
+                                            setSelectedSegmentIndices([i]);
+                                        }
                                     }}
                                     className="hover:stroke-white cursor-pointer transition-colors"
                                 />
@@ -393,14 +435,18 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                         })}
 
                         {/* Virtual Tool Head (Simulation) */}
-                        <g transform={`translate(${simProj.x}, ${simProj.y})`}>
-                            <circle r="3" fill="#22d3ee" fillOpacity="0.8" stroke="#fff" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-                        </g>
+                        {!isNaN(simProj.x) && !isNaN(simProj.y) && (
+                            <g transform={`translate(${simProj.x}, ${simProj.y})`}>
+                                <circle r="3" fill="#22d3ee" fillOpacity="0.8" stroke="#fff" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+                            </g>
+                        )}
 
                         {/* Actual Machine Head */}
-                        <g transform={`translate(${mProj.x}, ${mProj.y})`}>
-                            <circle r="2" fill="#eab308" fillOpacity="0.5" stroke="#eab308" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
-                        </g>
+                        {!isNaN(mProj.x) && !isNaN(mProj.y) && (
+                            <g transform={`translate(${mProj.x}, ${mProj.y})`}>
+                                <circle r="2" fill="#eab308" fillOpacity="0.5" stroke="#eab308" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
+                            </g>
+                        )}
                     </g>
                 </svg>
 
@@ -408,14 +454,20 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                     <div className="text-slate-400 mb-1 font-bold">{viewMode} VIEW</div>
                     <div className="flex items-center gap-2 mb-1"><div className="w-3 h-0.5 bg-sky-500"></div> Feed (G1/2/3)</div>
                     <div className="flex items-center gap-2 mb-1"><div className="w-3 h-0.5 bg-red-500 border-dashed border-t border-red-500"></div> Rapid (G0)</div>
-                    <div className="text-slate-500 mt-1 italic">Left Drag: Rotate/Pan • Click Path: Select</div>
+                    <div className="text-slate-500 mt-1 italic">Left Drag: Rotate/Pan • Click: Select • Ctrl+Click: Multi-Select</div>
                 </div>
 
-                {selectedLineIndex !== null && (
+                {(selectedLineIndex !== null || selectedSegmentIndices.length > 0) && (
                     <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-slate-800 p-2 rounded-full border border-slate-600 shadow-xl z-10">
-                        <span className="text-xs text-slate-300 pl-2">Line {selectedLineIndex + 1} Selected</span>
+                        <span className="text-xs text-slate-300 pl-2">
+                            {selectedSegmentIndices.length > 1
+                                ? `${selectedSegmentIndices.length} Segments Selected`
+                                : selectedLineIndex !== null
+                                    ? `Line ${selectedLineIndex + 1} Selected`
+                                    : '1 Segment Selected'}
+                        </span>
                         <button
-                            onClick={handleDeleteSegment}
+                            onClick={handleDeleteSegments}
                             className="p-1 bg-red-600 hover:bg-red-500 rounded-full text-white"
                             title="Delete Segment"
                         >

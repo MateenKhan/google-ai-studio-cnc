@@ -23,9 +23,9 @@ export enum Unit {
 }
 
 export enum MirrorMode {
-    NONE = 'NONE',
-    WHOLE = 'WHOLE', // Mirror entire text object
-    CHAR = 'CHAR',   // Mirror individual characters in place
+  NONE = 'NONE',
+  WHOLE = 'WHOLE', // Mirror entire text object
+  CHAR = 'CHAR',   // Mirror individual characters in place
 }
 
 export interface BaseShape {
@@ -54,7 +54,7 @@ export interface TextShape extends BaseShape {
   fontFamily?: string;
   letterSpacing?: number;
   mirrorMode?: MirrorMode;
-  mirror?: boolean; 
+  mirror?: boolean;
 }
 
 export interface HeartShape extends BaseShape {
@@ -71,12 +71,13 @@ export interface LineShape extends BaseShape {
 
 export interface PolylineShape extends BaseShape {
   type: ShapeType.POLYLINE;
-  points: {x: number, y: number}[];
+  points: { x: number, y: number }[];
 }
 
 export interface GroupShape extends BaseShape {
   type: ShapeType.GROUP;
   children: Shape[];
+  collapsed?: boolean;
 }
 
 export type Shape = RectangleShape | CircleShape | TextShape | HeartShape | LineShape | PolylineShape | GroupShape;
@@ -89,20 +90,20 @@ export interface MachineSettings {
 }
 
 export interface MachinePosition {
-    x: string;
-    y: string;
-    z: string;
+  x: string;
+  y: string;
+  z: string;
 }
 
 export interface MachineStatus {
-    state: 'Idle' | 'Run' | 'Hold' | 'Alarm' | 'Door' | 'Check' | 'Home' | 'Sleep' | 'Disconnected' | 'Connecting';
-    pos: MachinePosition;
-    feed: string;
-    spindle: string;
+  state: 'Idle' | 'Run' | 'Hold' | 'Alarm' | 'Door' | 'Check' | 'Home' | 'Sleep' | 'Disconnected' | 'Connecting';
+  pos: MachinePosition;
+  feed: string;
+  spindle: string;
 }
 
 export interface GrblSetting {
-    id: string;
-    value: string;
-    description: string;
+  id: string;
+  value: string;
+  description: string;
 }
