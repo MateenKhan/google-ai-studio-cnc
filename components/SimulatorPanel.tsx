@@ -12,9 +12,11 @@ interface SimulatorPanelProps {
     onClose: () => void;
     machineStatus: MachineStatus;
     isConnected: boolean;
+    isManualMode?: boolean;
+    onRegenerate?: () => void;
 }
 
-const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, onClose, machineStatus, isConnected }) => {
+const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, onClose, machineStatus, isConnected, isManualMode, onRegenerate }) => {
     const [viewMode, setViewMode] = useState<'3D' | '2D'>('3D');
     const [zoom, setZoom] = useState(1);
     const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -25,7 +27,10 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     const [selectedSegmentIndices, setSelectedSegmentIndices] = useState<number[]>([]);
 
     // Fullscreen
-    const [isFullscreen, setIsFullscreen] = useState(false);
+    const [isFloating, setIsFloating] = useState(false);
+    const [isMinimized, setIsMinimized] = useState(false);
+    const [position, setPosition] = useState({ x: 100, y: 100 });
+    const [size, setSize] = useState({ width: 600, height: 400 });
 
     // Job State
     const [jobProgress, setJobProgress] = useState(0);
@@ -41,7 +46,9 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     const startProgressRef = useRef<number>(0);
 
     const containerRef = useRef<HTMLDivElement>(null);
+    const headerRef = useRef<HTMLDivElement>(null);
     const isDraggingRef = useRef(false);
+    const isMovingWindowRef = useRef(false);
     const lastMousePosRef = useRef({ x: 0, y: 0 });
     const dragModeRef = useRef<'PAN' | 'ROTATE'>('PAN');
 
@@ -242,6 +249,13 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
 
     // Interactive Controls
     const handlePointerDown = (e: React.PointerEvent) => {
+        if (isFloating && headerRef.current && headerRef.current.contains(e.target as Node)) {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            isMovingWindowRef.current = true;
+            lastMousePosRef.current = { x: e.clientX, y: e.clientY };
+            return;
+        }
+
         e.currentTarget.setPointerCapture(e.pointerId);
         isDraggingRef.current = true;
         lastMousePosRef.current = { x: e.clientX, y: e.clientY };
@@ -253,6 +267,14 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     };
 
     const handlePointerMove = (e: React.PointerEvent) => {
+        if (isMovingWindowRef.current) {
+            const dx = e.clientX - lastMousePosRef.current.x;
+            const dy = e.clientY - lastMousePosRef.current.y;
+            lastMousePosRef.current = { x: e.clientX, y: e.clientY };
+            setPosition(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+            return;
+        }
+
         if (!isDraggingRef.current) return;
         const dx = e.clientX - lastMousePosRef.current.x;
         const dy = e.clientY - lastMousePosRef.current.y;
@@ -273,6 +295,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
 
     const handlePointerUp = (e: React.PointerEvent) => {
         isDraggingRef.current = false;
+        isMovingWindowRef.current = false;
         e.currentTarget.releasePointerCapture(e.pointerId);
     };
 
@@ -282,10 +305,18 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     };
 
     const handleDeleteSegments = () => {
-        console.log('Delete called, selectedSegmentIndices:', selectedSegmentIndices, 'selectedLineIndex:', selectedLineIndex);
-        if (selectedSegmentIndices.length === 0 && selectedLineIndex === null) return;
+        console.log('DEBUG: handleDeleteSegments called');
+        console.log('DEBUG: selectedSegmentIndices:', selectedSegmentIndices);
+        console.log('DEBUG: selectedLineIndex:', selectedLineIndex);
+
+        if (selectedSegmentIndices.length === 0 && selectedLineIndex === null) {
+            console.log('DEBUG: No selection, returning');
+            return;
+        }
 
         const lines = gcode.split('\n');
+        console.log('DEBUG: Total lines before delete:', lines.length);
+
         const linesToDelete = new Set<number>();
 
         // Collect all line indices to delete
@@ -298,6 +329,8 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                 linesToDelete.add(segments[segIdx].lineIndex);
             }
         });
+
+        console.log('DEBUG: Lines to delete:', Array.from(linesToDelete));
 
         // Remove lines in reverse order to maintain indices
         const sortedIndices = Array.from(linesToDelete).sort((a, b) => b - a);
@@ -312,9 +345,10 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
         setSelectedSegmentIndices([]);
     };
 
-    const toggleFullscreen = () => {
-        console.log('Fullscreen toggled:', !isFullscreen);
-        setIsFullscreen(!isFullscreen);
+    const toggleFloating = () => {
+        setIsFloating(!isFloating);
+        // Reset position if docking back or popping out?
+        // Keep simple for now
     };
 
     // Keyboard delete support
@@ -356,210 +390,246 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     const mProj = project(parseFloat(machineStatus.pos.x), parseFloat(machineStatus.pos.y), parseFloat(machineStatus.pos.z));
 
     const content = (
-        <div className={`flex flex-col h-full bg-slate-900 w-full ${isFullscreen ? 'fixed inset-0 z-[9999]' : 'relative'}`}>
-            <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800 shrink-0">
-                <h2 className="font-bold text-slate-100 flex items-center gap-2">
+        <div
+            className={`flex flex-col bg-slate-900 w-full shadow-2xl border border-slate-700 ${isFloating ? 'fixed z-[9999] rounded-lg overflow-hidden' : 'h-full relative'}`}
+            style={isFloating ? {
+                left: position.x,
+                top: position.y,
+                width: size.width,
+                height: isMinimized ? 'auto' : size.height
+            } : {}}
+        >
+            <div
+                ref={headerRef}
+                className={`p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800 shrink-0 ${isFloating ? 'cursor-move' : ''}`}
+            >
+                <h2 className="font-bold text-slate-100 flex items-center gap-2 select-none">
                     <Play size={18} /> Simulator & Job
                 </h2>
-                <div className="flex gap-2">
+                <div className="flex gap-2" onPointerDown={e => e.stopPropagation()}>
+                    {isManualMode && (
+                        <button
+                            onClick={onRegenerate}
+                            className="px-2 py-1 text-xs bg-yellow-600 hover:bg-yellow-500 text-white rounded flex items-center gap-1 animate-pulse"
+                            title="G-code is manually edited. Click to sync with Canvas."
+                        >
+                            <Rotate3d size={12} /> Sync
+                        </button>
+                    )}
                     <button onClick={() => { setPan({ x: 0, y: 0 }); setZoom(1); }} className="p-1.5 text-slate-400 hover:text-white bg-slate-700 rounded" title="Reset View">
                         <Move size={16} />
                     </button>
                     <button onClick={() => setViewMode(v => v === '3D' ? '2D' : '3D')} className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-700 rounded" title="Toggle 3D/2D">
                         {viewMode === '3D' ? <Square size={16} /> : <Rotate3d size={16} />}
                     </button>
-                    <button onClick={toggleFullscreen} className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-700 rounded" title="Toggle Fullscreen">
-                        {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                    <button onClick={toggleFloating} className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-700 rounded" title={isFloating ? "Dock" : "Popout"}>
+                        {isFloating ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
                     </button>
+                    {isFloating && (
+                        <button onClick={() => setIsMinimized(!isMinimized)} className="p-1.5 text-slate-400 hover:text-sky-400 bg-slate-700 rounded" title={isMinimized ? "Expand" : "Minimize"}>
+                            {isMinimized ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
+                        </button>
+                    )}
                     <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={18} /></button>
                 </div>
             </div>
 
-            <div
-                ref={containerRef}
-                className={`flex-1 bg-[#111111] relative overflow-hidden flex items-center justify-center cursor-${viewMode === '3D' ? 'move' : 'grab'}`}
-                onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                onContextMenu={e => e.preventDefault()}
-                onWheel={handleWheel}
-            >
-                <svg
-                    viewBox={viewBox}
-                    className="w-full h-full"
-                    preserveAspectRatio="xMidYMid meet"
-                >
-                    <g transform={`scale(${zoom}) translate(${pan.x}, ${pan.y})`}>
-
-                        {/* Axes Origin */}
-                        {(() => {
-                            const o = project(0, 0, 0);
-                            const x = project(20, 0, 0);
-                            const y = project(0, 20, 0);
-                            const z = project(0, 0, 20);
-                            return (
-                                <g opacity="0.4" pointerEvents="none">
-                                    <line x1={o.x} y1={o.y} x2={x.x} y2={x.y} stroke="#ef4444" strokeWidth="1" />
-                                    <line x1={o.x} y1={o.y} x2={y.x} y2={y.y} stroke="#22c55e" strokeWidth="1" />
-                                    {viewMode === '3D' && <line x1={o.x} y1={o.y} x2={z.x} y2={z.y} stroke="#3b82f6" strokeWidth="1" />}
-                                </g>
-                            )
-                        })()}
-
-                        {/* Paths */}
-                        {segments.map((seg, i) => {
-                            const p1 = project(seg.x1, seg.y1, seg.z1);
-                            const p2 = project(seg.x2, seg.y2, seg.z2);
-                            const isRapid = seg.type === 'G0';
-                            const isSelected = selectedLineIndex === seg.lineIndex || selectedSegmentIndices.includes(i);
-                            return (
-                                <line
-                                    key={i}
-                                    x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
-                                    stroke={isSelected ? '#facc15' : (isRapid ? '#ef4444' : '#0ea5e9')}
-                                    strokeWidth={isSelected ? 3 : (isRapid ? 0.3 : 1)}
-                                    strokeDasharray={isRapid ? '1 1' : 'none'}
-                                    opacity={isRapid ? 0.4 : 0.9}
-                                    vectorEffect="non-scaling-stroke"
-                                    onPointerDown={(e) => {
-                                        e.stopPropagation();
-                                        console.log('Path clicked, Ctrl:', e.ctrlKey, 'Index:', i);
-                                        if (e.ctrlKey || e.metaKey) {
-                                            // Multi-select mode
-                                            setSelectedSegmentIndices(prev =>
-                                                prev.includes(i)
-                                                    ? prev.filter(idx => idx !== i)
-                                                    : [...prev, i]
-                                            );
-                                        } else {
-                                            // Single select mode
-                                            setSelectedLineIndex(seg.lineIndex);
-                                            setSelectedSegmentIndices([i]);
-                                        }
-                                    }}
-                                    className="hover:stroke-white cursor-pointer transition-colors"
-                                />
-                            )
-                        })}
-
-                        {/* Virtual Tool Head (Simulation) */}
-                        {!isNaN(simProj.x) && !isNaN(simProj.y) && (
-                            <g transform={`translate(${simProj.x}, ${simProj.y})`}>
-                                <circle r="3" fill="#22d3ee" fillOpacity="0.8" stroke="#fff" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-                            </g>
-                        )}
-
-                        {/* Actual Machine Head */}
-                        {!isNaN(mProj.x) && !isNaN(mProj.y) && (
-                            <g transform={`translate(${mProj.x}, ${mProj.y})`}>
-                                <circle r="2" fill="#eab308" fillOpacity="0.5" stroke="#eab308" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
-                            </g>
-                        )}
-                    </g>
-                </svg>
-
-                <div className="absolute bottom-32 left-4 bg-slate-900/80 p-2 rounded border border-slate-700 text-[10px] pointer-events-none select-none">
-                    <div className="text-slate-400 mb-1 font-bold">{viewMode} VIEW</div>
-                    <div className="flex items-center gap-2 mb-1"><div className="w-3 h-0.5 bg-sky-500"></div> Feed (G1/2/3)</div>
-                    <div className="flex items-center gap-2 mb-1"><div className="w-3 h-0.5 bg-red-500 border-dashed border-t border-red-500"></div> Rapid (G0)</div>
-                    <div className="text-slate-500 mt-1 italic">Left Drag: Rotate/Pan • Click: Select • Ctrl+Click: Multi-Select</div>
-                </div>
-
-                {(selectedLineIndex !== null || selectedSegmentIndices.length > 0) && (
-                    <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-slate-800 p-2 rounded-full border border-slate-600 shadow-xl z-10">
-                        <span className="text-xs text-slate-300 pl-2">
-                            {selectedSegmentIndices.length > 1
-                                ? `${selectedSegmentIndices.length} Segments Selected`
-                                : selectedLineIndex !== null
-                                    ? `Line ${selectedLineIndex + 1} Selected`
-                                    : '1 Segment Selected'}
-                        </span>
-                        <button
-                            onClick={handleDeleteSegments}
-                            className="p-1 bg-red-600 hover:bg-red-500 rounded-full text-white"
-                            title="Delete Segment"
-                        >
-                            <Trash2 size={14} />
-                        </button>
-                    </div>
-                )}
-            </div>
-
-            {/* Simulation Controls */}
-            <div className="bg-slate-800 border-t border-slate-700 p-2 shrink-0 z-20 flex items-center gap-4 px-4">
-                <button
-                    onClick={handleToggleSimulation}
-                    className={`p-2 rounded-full ${isSimulating ? 'bg-yellow-600 text-white' : 'bg-sky-600 text-white'} hover:opacity-90`}
-                >
-                    {isSimulating ? <Pause size={16} /> : <Play size={16} />}
-                </button>
-                <button onClick={handleSimStop} className="p-2 text-slate-400 hover:text-white">
-                    <Square size={16} />
-                </button>
-
-                <div className="flex-1 flex flex-col gap-1">
-                    <div className="flex justify-between text-xs text-slate-400">
-                        <span>Simulation Progress</span>
-                        <span>{Math.round(simProgress * 100)}%</span>
-                    </div>
-                    <input
-                        type="range"
-                        min="0" max="1" step="0.001"
-                        value={simProgress}
-                        onChange={(e) => {
-                            setSimProgress(parseFloat(e.target.value));
-                            setIsSimulating(false);
-                        }}
-                        className="w-full accent-sky-500 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer"
-                    />
-                </div>
-
-                <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-400">Speed:</span>
-                    <select
-                        value={simSpeed}
-                        onChange={(e) => setSimSpeed(parseFloat(e.target.value))}
-                        className="bg-slate-900 border border-slate-700 text-xs text-slate-300 rounded px-1 py-1"
+            {!isMinimized && (
+                <>
+                    <div
+                        ref={containerRef}
+                        className={`flex-1 bg-[#111111] relative overflow-hidden flex items-center justify-center cursor-${viewMode === '3D' ? 'move' : 'grab'}`}
+                        onPointerDown={handlePointerDown}
+                        onPointerMove={handlePointerMove}
+                        onPointerUp={handlePointerUp}
+                        onContextMenu={e => e.preventDefault()}
+                        onWheel={handleWheel}
+                        style={isFloating ? { height: size.height - 130 } : {}}
                     >
-                        <option value="0.5">0.5x</option>
-                        <option value="1">1x</option>
-                        <option value="2">2x</option>
-                        <option value="5">5x</option>
-                        <option value="10">10x</option>
-                    </select>
-                </div>
-            </div>
+                        <svg
+                            viewBox={viewBox}
+                            className="w-full h-full"
+                            preserveAspectRatio="xMidYMid meet"
+                        >
+                            <g transform={`scale(${zoom}) translate(${pan.x}, ${pan.y})`}>
 
-            {/* Job Control Overlay */}
-            <div className="bg-slate-900 border-t border-slate-800 p-4 shrink-0 z-20">
-                <div className="flex justify-between items-center mb-2">
-                    <h3 className="text-xs font-semibold text-slate-400 uppercase">Machine Job Control</h3>
-                    {jobTotal > 0 && (
-                        <span className="text-xs text-sky-400">{Math.round((jobProgress / jobTotal) * 100)}%</span>
-                    )}
-                </div>
-                {jobTotal > 0 && (
-                    <div className="w-full bg-slate-800 rounded-full h-2 mb-4 overflow-hidden">
-                        <div className="bg-green-500 h-full transition-all duration-300" style={{ width: `${(jobProgress / jobTotal) * 100}%` }}></div>
+                                {/* Axes Origin */}
+                                {(() => {
+                                    const o = project(0, 0, 0);
+                                    const x = project(20, 0, 0);
+                                    const y = project(0, 20, 0);
+                                    const z = project(0, 0, 20);
+                                    return (
+                                        <g opacity="0.4" pointerEvents="none">
+                                            <line x1={o.x} y1={o.y} x2={x.x} y2={x.y} stroke="#ef4444" strokeWidth="1" />
+                                            <line x1={o.x} y1={o.y} x2={y.x} y2={y.y} stroke="#22c55e" strokeWidth="1" />
+                                            {viewMode === '3D' && <line x1={o.x} y1={o.y} x2={z.x} y2={z.y} stroke="#3b82f6" strokeWidth="1" />}
+                                        </g>
+                                    )
+                                })()}
+
+                                {/* Paths */}
+                                {segments.map((seg, i) => {
+                                    const p1 = project(seg.x1, seg.y1, seg.z1);
+                                    const p2 = project(seg.x2, seg.y2, seg.z2);
+                                    const isRapid = seg.type === 'G0';
+                                    const isSelected = selectedLineIndex === seg.lineIndex || selectedSegmentIndices.includes(i);
+                                    return (
+                                        <g key={i}>
+                                            {/* Hit Area (Thicker, Transparent) */}
+                                            <line
+                                                x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
+                                                stroke="transparent"
+                                                strokeWidth={10}
+                                                vectorEffect="non-scaling-stroke"
+                                                onPointerDown={(e) => {
+                                                    e.stopPropagation();
+                                                    console.log('Path clicked (Hit Area), Index:', i);
+                                                    if (e.ctrlKey || e.metaKey) {
+                                                        setSelectedSegmentIndices(prev =>
+                                                            prev.includes(i) ? prev.filter(idx => idx !== i) : [...prev, i]
+                                                        );
+                                                    } else {
+                                                        setSelectedLineIndex(seg.lineIndex);
+                                                        setSelectedSegmentIndices([i]);
+                                                    }
+                                                }}
+                                                className="cursor-pointer"
+                                            />
+                                            {/* Visible Line */}
+                                            <line
+                                                x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
+                                                stroke={isSelected ? '#facc15' : (isRapid ? '#ef4444' : '#0ea5e9')}
+                                                strokeWidth={isSelected ? 3 : (isRapid ? 0.3 : 1)}
+                                                strokeDasharray={isRapid ? '1 1' : 'none'}
+                                                opacity={isRapid ? 0.4 : 0.9}
+                                                vectorEffect="non-scaling-stroke"
+                                                pointerEvents="none"
+                                            />
+                                        </g>
+                                    )
+                                })}
+
+                                {/* Virtual Tool Head (Simulation) */}
+                                {!isNaN(simProj.x) && !isNaN(simProj.y) && (
+                                    <g transform={`translate(${simProj.x}, ${simProj.y})`}>
+                                        <circle r="3" fill="#22d3ee" fillOpacity="0.8" stroke="#fff" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+                                    </g>
+                                )}
+
+                                {/* Actual Machine Head */}
+                                {!isNaN(mProj.x) && !isNaN(mProj.y) && (
+                                    <g transform={`translate(${mProj.x}, ${mProj.y})`}>
+                                        <circle r="2" fill="#eab308" fillOpacity="0.5" stroke="#eab308" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
+                                    </g>
+                                )}
+                            </g>
+                        </svg>
+
+                        <div className="absolute bottom-32 left-4 bg-slate-900/80 p-2 rounded border border-slate-700 text-[10px] pointer-events-none select-none">
+                            <div className="text-slate-400 mb-1 font-bold">{viewMode} VIEW</div>
+                            <div className="flex items-center gap-2 mb-1"><div className="w-3 h-0.5 bg-sky-500"></div> Feed (G1/2/3)</div>
+                            <div className="flex items-center gap-2 mb-1"><div className="w-3 h-0.5 bg-red-500 border-dashed border-t border-red-500"></div> Rapid (G0)</div>
+                            <div className="text-slate-500 mt-1 italic">Left Drag: Rotate/Pan • Click: Select • Ctrl+Click: Multi-Select</div>
+                        </div>
+
+                        {(selectedLineIndex !== null || selectedSegmentIndices.length > 0) && (
+                            <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-slate-800 p-2 rounded-full border border-slate-600 shadow-xl z-10">
+                                <span className="text-xs text-slate-300 pl-2">
+                                    {selectedSegmentIndices.length > 1
+                                        ? `${selectedSegmentIndices.length} Segments Selected`
+                                        : selectedLineIndex !== null
+                                            ? `Line ${selectedLineIndex + 1} Selected`
+                                            : '1 Segment Selected'}
+                                </span>
+                                <button
+                                    onClick={handleDeleteSegments}
+                                    className="p-1 bg-red-600 hover:bg-red-500 rounded-full text-white"
+                                    title="Delete Segment"
+                                >
+                                    <Trash2 size={14} className="pointer-events-none" />
+                                </button>
+                            </div>
+                        )}
                     </div>
-                )}
-                <div className="flex gap-2">
-                    <button onClick={handleRunJob} disabled={!gcode || !isConnected || isJobRunning} className="flex-1 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center gap-2 text-white font-medium">
-                        <Play size={16} /> Run on Machine
-                    </button>
-                    <button onClick={handlePauseJob} disabled={!isConnected || !isJobRunning} className="px-4 py-2 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center text-white">
-                        <Pause size={16} />
-                    </button>
-                    <button onClick={handleStopJob} disabled={!isConnected || (!isJobRunning && jobProgress === 0)} className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center text-white">
-                        <Square size={16} />
-                    </button>
-                </div>
-                {!isConnected && <div className="text-center text-xs text-red-400 mt-2">Machine Disconnected</div>}
-            </div>
+
+                    {/* Simulation Controls */}
+                    <div className="bg-slate-800 border-t border-slate-700 p-2 shrink-0 z-20 flex items-center gap-4 px-4">
+                        <button
+                            onClick={handleToggleSimulation}
+                            className={`p-2 rounded-full ${isSimulating ? 'bg-yellow-600 text-white' : 'bg-sky-600 text-white'} hover:opacity-90`}
+                        >
+                            {isSimulating ? <Pause size={16} /> : <Play size={16} />}
+                        </button>
+                        <button onClick={handleSimStop} className="p-2 text-slate-400 hover:text-white">
+                            <Square size={16} />
+                        </button>
+
+                        <div className="flex-1 flex flex-col gap-1">
+                            <div className="flex justify-between text-xs text-slate-400">
+                                <span>Simulation Progress</span>
+                                <span>{Math.round(simProgress * 100)}%</span>
+                            </div>
+                            <input
+                                type="range"
+                                min="0" max="1" step="0.001"
+                                value={simProgress}
+                                onChange={(e) => {
+                                    setSimProgress(parseFloat(e.target.value));
+                                    setIsSimulating(false);
+                                }}
+                                className="w-full accent-sky-500 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                            />
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-400">Speed:</span>
+                            <select
+                                value={simSpeed}
+                                onChange={(e) => setSimSpeed(parseFloat(e.target.value))}
+                                className="bg-slate-900 border border-slate-700 text-xs text-slate-300 rounded px-1 py-1"
+                            >
+                                <option value="0.5">0.5x</option>
+                                <option value="1">1x</option>
+                                <option value="2">2x</option>
+                                <option value="5">5x</option>
+                                <option value="10">10x</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    {/* Job Control Overlay */}
+                    <div className="bg-slate-900 border-t border-slate-800 p-4 shrink-0 z-20">
+                        <div className="flex justify-between items-center mb-2">
+                            <h3 className="text-xs font-semibold text-slate-400 uppercase">Machine Job Control</h3>
+                            {jobTotal > 0 && (
+                                <span className="text-xs text-sky-400">{Math.round((jobProgress / jobTotal) * 100)}%</span>
+                            )}
+                        </div>
+                        {jobTotal > 0 && (
+                            <div className="w-full bg-slate-800 rounded-full h-2 mb-4 overflow-hidden">
+                                <div className="bg-green-500 h-full transition-all duration-300" style={{ width: `${(jobProgress / jobTotal) * 100}%` }}></div>
+                            </div>
+                        )}
+                        <div className="flex gap-2">
+                            <button onClick={handleRunJob} disabled={!gcode || !isConnected || isJobRunning} className="flex-1 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center gap-2 text-white font-medium">
+                                <Play size={16} /> Run on Machine
+                            </button>
+                            <button onClick={handlePauseJob} disabled={!isConnected || !isJobRunning} className="px-4 py-2 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center text-white">
+                                <Pause size={16} />
+                            </button>
+                            <button onClick={handleStopJob} disabled={!isConnected || (!isJobRunning && jobProgress === 0)} className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center text-white">
+                                <Square size={16} />
+                            </button>
+                        </div>
+                        {!isConnected && <div className="text-center text-xs text-red-400 mt-2">Machine Disconnected</div>}
+                    </div>
+                </>
+            )}
         </div>
     );
 
-    return isFullscreen ? createPortal(content, document.body) : content;
+    return isFloating ? createPortal(content, document.body) : content;
 };
 
 export default SimulatorPanel;

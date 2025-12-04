@@ -501,6 +501,8 @@ const App: React.FC = () => {
                   onClose={() => setIsRightPanelOpen(false)}
                   machineStatus={machineStatus}
                   isConnected={isMachineConnected}
+                  isManualMode={isManualMode}
+                  onRegenerate={() => setIsManualMode(false)}
                 />
               )}
 
