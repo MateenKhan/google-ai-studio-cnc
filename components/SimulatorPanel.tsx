@@ -21,8 +21,7 @@ interface SimulatorPanelProps {
 }
 
 const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, onClose, machineStatus, isConnected, isManualMode, onRegenerate, generateOnlySelected, onToggleGenerateOnlySelected }) => {
-    const [viewMode, setViewMode] = useState<'3D' | '2D'>('3D');
-    const [isTopView, setIsTopView] = useState(false);
+    const [activeView, setActiveView] = useState<'3D' | 'TOP' | 'FRONT'>('3D');
     const [zoom, setZoom] = useState(1);
     const [pan, setPan] = useState({ x: 0, y: 0 });
     const [rotation, setRotation] = useState({ x: 60, z: 45 }); // Degrees
@@ -205,12 +204,15 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
         setSimProgress(0);
     };
 
-    const toggleTopView = () => {
-        setIsTopView(!isTopView);
-        // When entering top view, set rotation to look directly down
-        if (!isTopView) {
+    const setView = (view: '3D' | 'TOP' | 'FRONT') => {
+        setActiveView(view);
+        // Set appropriate rotation for each view
+        if (view === 'TOP') {
             setRotation({ x: 90, z: 0 });
+        } else if (view === 'FRONT') {
+            setRotation({ x: 0, z: 0 });
         }
+        // For 3D view, keep existing rotation
     };
 
     const handleCursorPositionChange = (lineNumber: number) => {
@@ -246,14 +248,16 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
         const cz = z - centerOfBounds.z;
 
         // Top view mode - look directly down from above
-        if (isTopView) {
+        if (activeView === 'TOP') {
             return { x: cx, y: -cy };
         }
 
-        if (viewMode === '2D') {
-            return { x: cx, y: -cy };
+        // Front view mode - look from the front (X-Z plane)
+        if (activeView === 'FRONT') {
+            return { x: cx, y: -cz };
         }
 
+        // 3D view with rotation
         // Rotate around Z axis
         const radZ = (rotation.z * Math.PI) / 180;
         const x1 = cx * Math.cos(radZ) - cy * Math.sin(radZ);
@@ -281,25 +285,25 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
         // Allow clicking on SVG elements even in fullscreen mode
         // Check if the target is a line element (not the SVG container itself)
         const isLineElement = e.target instanceof SVGElement && e.target.tagName === 'line';
-        
+
         // If clicking on a line element, allow the event to propagate to the line's onClick handler
         if (isFullscreen && isLineElement) {
             return;
         }
-        
+
         // Allow all interactions in fullscreen mode (pan, rotate, move)
         e.currentTarget.setPointerCapture(e.pointerId);
         isDraggingRef.current = true;
         hasDraggedRef.current = false;
         lastMousePosRef.current = { x: e.clientX, y: e.clientY };
-        
+
         // Set drag mode based on mouse button:
         // - Right mouse button (2) or Middle mouse button (1): PAN mode
         // - Left mouse button (0): ROTATE mode (in 3D view) or PAN mode (in 2D view)
         if (e.button === 2 || e.button === 1) {
             dragModeRef.current = 'PAN';
         } else {
-            dragModeRef.current = viewMode === '3D' ? 'ROTATE' : 'PAN';
+            dragModeRef.current = activeView === '3D' ? 'ROTATE' : 'PAN';
         }
     };
 
@@ -308,7 +312,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
         if (!isDraggingRef.current) return;
         const dx = e.clientX - lastMousePosRef.current.x;
         const dy = e.clientY - lastMousePosRef.current.y;
-        
+
         if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
             hasDraggedRef.current = true;
         }
@@ -440,7 +444,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                 .map(l => l.trim())
                 .filter(l => l.length > 0 && !l.startsWith(';') && !l.startsWith('('));
             setJobTotal(lines.length);
-            
+
             // Using the startJob method from serialService
             serialService.startJob(gcode, (current, total) => {
                 setJobProgress(current);
@@ -471,7 +475,9 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                     <Rotate3d size={18} /> Simulator
                 </h2>
                 <div className="flex gap-2">
-                    <Ripple><button onClick={toggleTopView} className={`p-1 ${isTopView ? 'text-sky-400 bg-sky-900/30' : 'text-slate-400 hover:text-white'}`} title="Toggle Top View">2D</button></Ripple>
+                    <Ripple><button onClick={() => setView('3D')} className={`px-2 py-1 text-xs ${activeView === '3D' ? 'text-sky-400 bg-sky-900/30' : 'text-slate-400 hover:text-white'}`} title="3D View">3D</button></Ripple>
+                    <Ripple><button onClick={() => setView('TOP')} className={`px-2 py-1 text-xs ${activeView === 'TOP' ? 'text-sky-400 bg-sky-900/30' : 'text-slate-400 hover:text-white'}`} title="Top View">Top</button></Ripple>
+                    <Ripple><button onClick={() => setView('FRONT')} className={`px-2 py-1 text-xs ${activeView === 'FRONT' ? 'text-sky-400 bg-sky-900/30' : 'text-slate-400 hover:text-white'}`} title="Front View">Front</button></Ripple>
                     <Ripple><button onClick={toggleFullscreen} className="text-slate-400 hover:text-white">{isFullscreen ? <Shrink size={18} /> : <Expand size={18} />}</button></Ripple>
                     <Ripple><button onClick={onClose} className="text-slate-400 hover:text-white"><X size={18} /></button></Ripple>
                 </div>
@@ -509,6 +515,30 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                     {/* Bounds Box */}
                     <rect x={bounds.minX} y={bounds.minY} width={bounds.maxX - bounds.minX} height={bounds.maxY - bounds.minY} fill="none" stroke="#64748b" strokeWidth="0.5" strokeDasharray="5,5" />
 
+                    {/* Origin Axes */}
+                    <g>
+                        {(() => {
+                            const axisLength = scaleRef * 0.15;
+                            const origin = project(0, 0, 0);
+                            const xEnd = project(axisLength, 0, 0);
+                            const yEnd = project(0, axisLength, 0);
+                            const zEnd = project(0, 0, axisLength);
+
+                            return (
+                                <>
+                                    {/* X Axis - Red */}
+                                    <line x1={origin.x} y1={origin.y} x2={xEnd.x} y2={xEnd.y} stroke="#ef4444" strokeWidth="2" opacity="0.8" />
+                                    {/* Y Axis - Green */}
+                                    <line x1={origin.x} y1={origin.y} x2={yEnd.x} y2={yEnd.y} stroke="#22c55e" strokeWidth="2" opacity="0.8" />
+                                    {/* Z Axis - Blue */}
+                                    <line x1={origin.x} y1={origin.y} x2={zEnd.x} y2={zEnd.y} stroke="#3b82f6" strokeWidth="2" opacity="0.8" />
+                                    {/* Origin Point */}
+                                    <circle cx={origin.x} cy={origin.y} r="3" fill="#fbbf24" stroke="#fff" strokeWidth="1" />
+                                </>
+                            );
+                        })()}
+                    </g>
+
                     {/* G-Code Path */}
                     <g>
                         {segments.map((segment, idx) => {
@@ -524,11 +554,11 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                                     x2={p2.x}
                                     y2={p2.y}
                                     stroke={
-                                        isHighlighted 
+                                        isHighlighted
                                             ? "#fbbf24" // Yellow for cursor-highlighted
-                                            : isSelected 
+                                            : isSelected
                                                 ? "#fbbf24" // Yellow for selected
-                                                : segment.type === 'G0' 
+                                                : segment.type === 'G0'
                                                     ? "#60a5fa" // Blue for G0 moves
                                                     : "#34d399" // Green for G1+ moves
                                     }
@@ -666,27 +696,27 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                         )}
                         <div className="flex gap-2">
                             <Ripple disabled={!gcode || !isConnected || isJobRunning}>
-                                <button 
-                                    onClick={handleRunJob} 
-                                    disabled={!gcode || !isConnected || isJobRunning} 
+                                <button
+                                    onClick={handleRunJob}
+                                    disabled={!gcode || !isConnected || isJobRunning}
                                     className="flex-1 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center gap-2 text-white font-medium"
                                 >
                                     <Play size={16} /> Run on Machine
                                 </button>
                             </Ripple>
                             <Ripple disabled={!isConnected || !isJobRunning}>
-                                <button 
-                                    onClick={handlePauseJob} 
-                                    disabled={!isConnected || !isJobRunning} 
+                                <button
+                                    onClick={handlePauseJob}
+                                    disabled={!isConnected || !isJobRunning}
                                     className="px-4 py-2 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center text-white"
                                 >
                                     <Pause size={16} />
                                 </button>
                             </Ripple>
                             <Ripple disabled={!isConnected || (!isJobRunning && jobProgress === 0)}>
-                                <button 
-                                    onClick={handleStopJob} 
-                                    disabled={!isConnected || (!isJobRunning && jobProgress === 0)} 
+                                <button
+                                    onClick={handleStopJob}
+                                    disabled={!isConnected || (!isJobRunning && jobProgress === 0)}
                                     className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center text-white"
                                 >
                                     <Square size={16} />
