@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Play, X, Rotate3d, Square, ZoomIn, ZoomOut, Move, Trash2, Pause, Maximize2, Minimize2, ChevronDown, ChevronRight, Expand, Shrink, Edit3, Check } from 'lucide-react';
+import { Play, X, Rotate3d, Square, ZoomIn, ZoomOut, Move, Trash2, Pause, Maximize2, Minimize2, ChevronDown, ChevronRight, Expand, Shrink, Edit3, Check, Bookmark, ArrowUp } from 'lucide-react';
 import { calculateGCodeBounds } from '../utils';
 import { MachineStatus } from '../types';
 import { serialService } from '../services/serialService';
@@ -45,6 +45,10 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     const [isDraggingPoint, setIsDraggingPoint] = useState(false);
     const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
     const [dragStartPoint, setDragStartPoint] = useState({ x: 0, y: 0, z: 0 });
+
+    // Point Selection Enhancement
+    const [selectedPoints, setSelectedPoints] = useState<number[]>([]); // For multiple point selection
+    const [storedPoints, setStoredPoints] = useState<{x: number, y: number, z: number, segmentIndex: number, pointIndex: number}[]>([]); // Stored points for later use
 
     // Fullscreen
     const [isFullscreen, setIsFullscreen] = useState(false);
@@ -395,6 +399,70 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
         setIsEditingShape(false);
         setEditablePoints([]);
         setSelectedPointIndex(null);
+        setSelectedPoints([]);
+        setStoredPoints([]);
+    };
+
+    // Toggle point selection (for multiple selection)
+    const togglePointSelection = (pointIndex: number) => {
+        setSelectedPoints(prev => {
+            if (prev.includes(pointIndex)) {
+                return prev.filter(idx => idx !== pointIndex);
+            } else {
+                return [...prev, pointIndex];
+            }
+        });
+    };
+
+    // Store selected points for later use
+    const storeSelectedPoints = () => {
+        if (selectedPoints.length > 0) {
+            const pointsToStore = selectedPoints.map(idx => editablePoints[idx]);
+            setStoredPoints(pointsToStore);
+        }
+    };
+
+    // Clear stored points
+    const clearStoredPoints = () => {
+        setStoredPoints([]);
+    };
+
+    // Insert tool raising at selected points
+    const insertToolRaisingAtPoints = () => {
+        if (storedPoints.length === 0) return;
+        
+        // Convert current G-code to lines
+        const lines = gcode.split('\n');
+        
+        // Sort stored points by line index to process in order
+        const sortedPoints = [...storedPoints].sort((a, b) => {
+            const lineA = segments[a.segmentIndex]?.lineIndex || 0;
+            const lineB = segments[b.segmentIndex]?.lineIndex || 0;
+            return lineA - lineB;
+        });
+        
+        // Keep track of inserted lines to adjust indices
+        let insertedLines = 0;
+        
+        // Process each stored point
+        sortedPoints.forEach(point => {
+            const segment = segments[point.segmentIndex];
+            if (!segment) return;
+            
+            const lineIndex = segment.lineIndex + insertedLines;
+            
+            // Insert "G0 Z0" before the line
+            if (lineIndex >= 0 && lineIndex <= lines.length) {
+                lines.splice(lineIndex, 0, 'G0 Z0');
+                insertedLines++; // Adjust for the newly inserted line
+            }
+        });
+        
+        // Update the G-code
+        onUpdateGCode(lines.join('\n'));
+        
+        // Clear stored points after insertion
+        setStoredPoints([]);
     };
 
     // Convert selected shape to editable points
@@ -700,22 +768,40 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                         {isEditingShape && editablePoints.map((point, idx) => {
                             const projected = project(point.x, point.y, point.z);
                             const isSelected = selectedPointIndex === idx;
+                            const isMultiSelected = selectedPoints.includes(idx);
+                            const isStored = storedPoints.some(storedPoint => 
+                                storedPoint.segmentIndex === point.segmentIndex && 
+                                storedPoint.pointIndex === point.pointIndex
+                            );
+                            
                             return (
                                 <circle
                                     key={idx}
                                     cx={projected.x}
                                     cy={projected.y}
-                                    r={isSelected ? 6 : 4}
-                                    fill={isSelected ? "#fbbf24" : "#3b82f6"}
+                                    r={isSelected ? 6 : isMultiSelected ? 5 : isStored ? 4 : 4}
+                                    fill={
+                                        isSelected ? "#fbbf24" : // Yellow for single selected
+                                        isMultiSelected ? "#3b82f6" : // Blue for multi-selected
+                                        isStored ? "#10b981" : // Green for stored points
+                                        "#ef4444" // Red for regular editable points
+                                    }
                                     stroke="#ffffff"
-                                    strokeWidth={1}
+                                    strokeWidth={isSelected || isMultiSelected ? 2 : 1}
                                     className="cursor-pointer"
                                     onMouseDown={(e) => {
                                         e.stopPropagation();
-                                        setSelectedPointIndex(idx);
-                                        setIsDraggingPoint(true);
-                                        setDragStartPos({ x: e.clientX, y: e.clientY });
-                                        setDragStartPoint({ x: point.x, y: point.y, z: point.z });
+                                        
+                                        // Handle Ctrl/Cmd click for multiple selection
+                                        if (e.ctrlKey || e.metaKey) {
+                                            togglePointSelection(idx);
+                                        } else {
+                                            // Single selection
+                                            setSelectedPointIndex(idx);
+                                            setIsDraggingPoint(true);
+                                            setDragStartPos({ x: e.clientX, y: e.clientY });
+                                            setDragStartPoint({ x: point.x, y: point.y, z: point.z });
+                                        }
                                     }}
                                 />
                             );
@@ -729,11 +815,11 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                 </svg>
 
                 {/* Selection Info Overlay */}
-                {(selectedLineIndex !== null || selectedSegmentIndices.length > 0) && (
+                {(selectedLineIndex !== null || selectedSegmentIndices.length > 0 || isEditingShape) && (
                     <div className="absolute bottom-4 left-4 right-4 bg-slate-800/90 backdrop-blur-sm rounded-lg p-3 border border-slate-700 flex items-center justify-between">
                         <span className="text-xs text-slate-300 pl-2">
                             {isEditingShape 
-                                ? `${editablePoints.length} Editable Points` 
+                                ? `${editablePoints.length} Editable Points (${selectedPoints.length} selected, ${storedPoints.length} stored)`
                                 : selectedSegmentIndices.length > 1
                                     ? `${selectedSegmentIndices.length} Segments Selected`
                                     : selectedLineIndex !== null
@@ -760,6 +846,30 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                                 </>
                             ) : (
                                 <>
+                                    <Ripple><button
+                                        onClick={storeSelectedPoints}
+                                        disabled={selectedPoints.length === 0}
+                                        className={`p-1 rounded-full text-white mr-2 ${selectedPoints.length > 0 ? 'bg-green-600 hover:bg-green-500' : 'bg-slate-600 cursor-not-allowed'}`}
+                                        title="Store Selected Points"
+                                    >
+                                        <Bookmark size={14} className="pointer-events-none" />
+                                    </button></Ripple>
+                                    <Ripple><button
+                                        onClick={insertToolRaisingAtPoints}
+                                        disabled={storedPoints.length === 0}
+                                        className={`p-1 rounded-full text-white mr-2 ${storedPoints.length > 0 ? 'bg-purple-600 hover:bg-purple-500' : 'bg-slate-600 cursor-not-allowed'}`}
+                                        title="Insert Tool Raising at Stored Points"
+                                    >
+                                        <ArrowUp size={14} className="pointer-events-none" />
+                                    </button></Ripple>
+                                    <Ripple><button
+                                        onClick={clearStoredPoints}
+                                        disabled={storedPoints.length === 0}
+                                        className={`p-1 rounded-full text-white mr-2 ${storedPoints.length > 0 ? 'bg-orange-600 hover:bg-orange-500' : 'bg-slate-600 cursor-not-allowed'}`}
+                                        title="Clear Stored Points"
+                                    >
+                                        <Trash2 size={14} className="pointer-events-none" />
+                                    </button></Ripple>
                                     <Ripple><button
                                         onClick={handleApplyShapeEdits}
                                         className="p-1 bg-green-600 hover:bg-green-500 rounded-full text-white mr-2"
