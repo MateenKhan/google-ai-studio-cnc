@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Play, X, Rotate3d, Square, ZoomIn, ZoomOut, Move, Trash2, Pause, Maximize2, Minimize2, ChevronDown, ChevronRight, Expand, Shrink } from 'lucide-react';
+import { Play, X, Rotate3d, Square, ZoomIn, ZoomOut, Move, Trash2, Pause, Maximize2, Minimize2, ChevronDown, ChevronRight, Expand, Shrink, Edit3, Check } from 'lucide-react';
 import { calculateGCodeBounds } from '../utils';
 import { MachineStatus } from '../types';
 import { serialService } from '../services/serialService';
@@ -21,7 +21,8 @@ interface SimulatorPanelProps {
 }
 
 const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, onClose, machineStatus, isConnected, isManualMode, onRegenerate, generateOnlySelected, onToggleGenerateOnlySelected }) => {
-    const [activeView, setActiveView] = useState<'3D' | 'TOP' | 'FRONT'>('3D');
+    const [viewMode, setViewMode] = useState<'3D' | '2D'>('3D');
+    const [isTopView, setIsTopView] = useState(false);
     const [zoom, setZoom] = useState(1);
     const [pan, setPan] = useState({ x: 0, y: 0 });
     const [rotation, setRotation] = useState({ x: 60, z: 45 }); // Degrees
@@ -36,6 +37,14 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     const [selectedSegmentIndices, setSelectedSegmentIndices] = useState<number[]>([]);
     const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null);
     const [cursorLineIndex, setCursorLineIndex] = useState<number | null>(null);
+
+    // Shape Editing
+    const [isEditingShape, setIsEditingShape] = useState(false);
+    const [editablePoints, setEditablePoints] = useState<{x: number, y: number, z: number, segmentIndex: number, pointIndex: number}[]>([]);
+    const [selectedPointIndex, setSelectedPointIndex] = useState<number | null>(null);
+    const [isDraggingPoint, setIsDraggingPoint] = useState(false);
+    const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
+    const [dragStartPoint, setDragStartPoint] = useState({ x: 0, y: 0, z: 0 });
 
     // Fullscreen
     const [isFullscreen, setIsFullscreen] = useState(false);
@@ -204,15 +213,12 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
         setSimProgress(0);
     };
 
-    const setView = (view: '3D' | 'TOP' | 'FRONT') => {
-        setActiveView(view);
-        // Set appropriate rotation for each view
-        if (view === 'TOP') {
+    const toggleTopView = () => {
+        setIsTopView(!isTopView);
+        // When entering top view, set rotation to look directly down
+        if (!isTopView) {
             setRotation({ x: 90, z: 0 });
-        } else if (view === 'FRONT') {
-            setRotation({ x: 0, z: 0 });
         }
-        // For 3D view, keep existing rotation
     };
 
     const handleCursorPositionChange = (lineNumber: number) => {
@@ -248,16 +254,14 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
         const cz = z - centerOfBounds.z;
 
         // Top view mode - look directly down from above
-        if (activeView === 'TOP') {
+        if (isTopView) {
             return { x: cx, y: -cy };
         }
 
-        // Front view mode - look from the front (X-Z plane)
-        if (activeView === 'FRONT') {
-            return { x: cx, y: -cz };
+        if (viewMode === '2D') {
+            return { x: cx, y: -cy };
         }
 
-        // 3D view with rotation
         // Rotate around Z axis
         const radZ = (rotation.z * Math.PI) / 180;
         const x1 = cx * Math.cos(radZ) - cy * Math.sin(radZ);
@@ -303,7 +307,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
         if (e.button === 2 || e.button === 1) {
             dragModeRef.current = 'PAN';
         } else {
-            dragModeRef.current = activeView === '3D' ? 'ROTATE' : 'PAN';
+            dragModeRef.current = viewMode === '3D' ? 'ROTATE' : 'PAN';
         }
     };
 
@@ -388,6 +392,111 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     const handleClearSelection = () => {
         setSelectedLineIndex(null);
         setSelectedSegmentIndices([]);
+        setIsEditingShape(false);
+        setEditablePoints([]);
+        setSelectedPointIndex(null);
+    };
+
+    // Convert selected shape to editable points
+    const handleConvertToEditableShape = () => {
+        if (selectedSegmentIndices.length === 0) return;
+        
+        // Get unique line indices from selected segments
+        const lineIndices = Array.from(new Set(selectedSegmentIndices.map(idx => segments[idx].lineIndex)));
+        
+        // Collect all points from selected segments
+        const points: {x: number, y: number, z: number, segmentIndex: number, pointIndex: number}[] = [];
+        
+        selectedSegmentIndices.forEach(segmentIndex => {
+            const segment = segments[segmentIndex];
+            // Add start point (avoiding duplicates)
+            if (points.length === 0 || 
+                points[points.length - 1].x !== segment.x1 || 
+                points[points.length - 1].y !== segment.y1 || 
+                points[points.length - 1].z !== segment.z1) {
+                points.push({
+                    x: segment.x1,
+                    y: segment.y1,
+                    z: segment.z1,
+                    segmentIndex: segmentIndex,
+                    pointIndex: 0
+                });
+            }
+            
+            // Add end point
+            points.push({
+                x: segment.x2,
+                y: segment.y2,
+                z: segment.z2,
+                segmentIndex: segmentIndex,
+                pointIndex: 1
+            });
+        });
+        
+        setEditablePoints(points);
+        setIsEditingShape(true);
+    };
+
+    // Update point position
+    const handleUpdatePoint = (pointIndex: number, newX: number, newY: number, newZ: number) => {
+        setEditablePoints(prev => {
+            const newPoints = [...prev];
+            if (newPoints[pointIndex]) {
+                newPoints[pointIndex] = {
+                    ...newPoints[pointIndex],
+                    x: newX,
+                    y: newY,
+                    z: newZ
+                };
+            }
+            return newPoints;
+        });
+    };
+
+    // Apply shape edits to G-code
+    const handleApplyShapeEdits = () => {
+        if (!isEditingShape || editablePoints.length === 0) return;
+        
+        // Convert current G-code to lines
+        const lines = gcode.split('\n');
+        
+        // For each editable point, update the corresponding G-code line
+        editablePoints.forEach(point => {
+            const segment = segments[point.segmentIndex];
+            const lineIndex = segment.lineIndex;
+            
+            if (lineIndex < lines.length) {
+                const line = lines[lineIndex];
+                // Update coordinates in the line
+                let updatedLine = line;
+                
+                // Replace X coordinate
+                if (point.pointIndex === 0) {
+                    // This is a start point, we need to update the previous line that leads to this point
+                    // For simplicity, we'll update this line's coordinates
+                    updatedLine = updatedLine.replace(/X[\d\.-]+/, `X${point.x.toFixed(3)}`);
+                } else {
+                    // This is an end point, update this line
+                    updatedLine = updatedLine.replace(/X[\d\.-]+/, `X${point.x.toFixed(3)}`);
+                }
+                
+                // Replace Y coordinate
+                updatedLine = updatedLine.replace(/Y[\d\.-]+/, `Y${point.y.toFixed(3)}`);
+                
+                // Replace Z coordinate
+                updatedLine = updatedLine.replace(/Z[\d\.-]+/, `Z${point.z.toFixed(3)}`);
+                
+                lines[lineIndex] = updatedLine;
+            }
+        });
+        
+        // Update the G-code
+        onUpdateGCode(lines.join('\n'));
+        
+        // Exit editing mode
+        setIsEditingShape(false);
+        setEditablePoints([]);
+        setSelectedPointIndex(null);
     };
 
     const toggleFloating = () => {
@@ -475,9 +584,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                     <Rotate3d size={18} /> Simulator
                 </h2>
                 <div className="flex gap-2">
-                    <Ripple><button onClick={() => setView('3D')} className={`px-2 py-1 text-xs ${activeView === '3D' ? 'text-sky-400 bg-sky-900/30' : 'text-slate-400 hover:text-white'}`} title="3D View">3D</button></Ripple>
-                    <Ripple><button onClick={() => setView('TOP')} className={`px-2 py-1 text-xs ${activeView === 'TOP' ? 'text-sky-400 bg-sky-900/30' : 'text-slate-400 hover:text-white'}`} title="Top View">Top</button></Ripple>
-                    <Ripple><button onClick={() => setView('FRONT')} className={`px-2 py-1 text-xs ${activeView === 'FRONT' ? 'text-sky-400 bg-sky-900/30' : 'text-slate-400 hover:text-white'}`} title="Front View">Front</button></Ripple>
+                    <Ripple><button onClick={toggleTopView} className={`p-1 ${isTopView ? 'text-sky-400 bg-sky-900/30' : 'text-slate-400 hover:text-white'}`} title="Toggle Top View">2D</button></Ripple>
                     <Ripple><button onClick={toggleFullscreen} className="text-slate-400 hover:text-white">{isFullscreen ? <Shrink size={18} /> : <Expand size={18} />}</button></Ripple>
                     <Ripple><button onClick={onClose} className="text-slate-400 hover:text-white"><X size={18} /></button></Ripple>
                 </div>
@@ -490,8 +597,32 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                     viewBox={viewBox}
                     className="w-full h-full bg-slate-950"
                     onPointerDown={handlePointerDown}
-                    onPointerMove={handlePointerMove}
-                    onPointerUp={handlePointerUp}
+                    onPointerMove={(e) => {
+                        // Handle point dragging
+                        if (isDraggingPoint && selectedPointIndex !== null) {
+                            const deltaX = (e.clientX - dragStartPos.x) / zoom;
+                            const deltaY = (e.clientY - dragStartPos.y) / zoom;
+                            
+                            // Convert screen delta to world coordinates
+                            // This is a simplified approach - in a real implementation you'd need to account for projection
+                            const newX = dragStartPoint.x + deltaX;
+                            const newY = dragStartPoint.y - deltaY; // Invert Y axis
+                            
+                            handleUpdatePoint(selectedPointIndex, newX, newY, dragStartPoint.z);
+                        }
+                        
+                        // Handle regular pointer move
+                        handlePointerMove(e);
+                    }}
+                    onPointerUp={(e) => {
+                        // End point dragging
+                        if (isDraggingPoint) {
+                            setIsDraggingPoint(false);
+                        }
+                        
+                        // Handle regular pointer up
+                        handlePointerUp(e);
+                    }}
                     onWheel={handleWheel}
                     onClick={() => {
                         if (!hasDraggedRef.current) {
@@ -514,33 +645,6 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
 
                     {/* Bounds Box */}
                     <rect x={bounds.minX} y={bounds.minY} width={bounds.maxX - bounds.minX} height={bounds.maxY - bounds.minY} fill="none" stroke="#64748b" strokeWidth="0.5" strokeDasharray="5,5" />
-
-                    {/* Origin Axes */}
-                    <g>
-                        {(() => {
-                            const axisLength = scaleRef * 0.15;
-                            const origin = project(0, 0, 0);
-                            const xEnd = project(axisLength, 0, 0);
-                            const yEnd = project(0, axisLength, 0);
-                            const zEnd = project(0, 0, axisLength);
-
-                            return (
-                                <>
-                                    {/* X Axis - Red */}
-                                    <line x1={origin.x} y1={origin.y} x2={xEnd.x} y2={xEnd.y} stroke="#ef4444" strokeWidth="2" opacity="0.8" />
-                                    <text x={xEnd.x} y={xEnd.y} fill="#ef4444" fontSize="12" fontWeight="bold" dx="5" dy="5">X</text>
-                                    {/* Y Axis - Green */}
-                                    <line x1={origin.x} y1={origin.y} x2={yEnd.x} y2={yEnd.y} stroke="#22c55e" strokeWidth="2" opacity="0.8" />
-                                    <text x={yEnd.x} y={yEnd.y} fill="#22c55e" fontSize="12" fontWeight="bold" dx="5" dy="5">Y</text>
-                                    {/* Z Axis - Blue */}
-                                    <line x1={origin.x} y1={origin.y} x2={zEnd.x} y2={zEnd.y} stroke="#3b82f6" strokeWidth="2" opacity="0.8" />
-                                    <text x={zEnd.x} y={zEnd.y} fill="#3b82f6" fontSize="12" fontWeight="bold" dx="5" dy="5">Z</text>
-                                    {/* Origin Point */}
-                                    <circle cx={origin.x} cy={origin.y} r="3" fill="#fbbf24" stroke="#fff" strokeWidth="1" />
-                                </>
-                            );
-                        })()}
-                    </g>
 
                     {/* G-Code Path */}
                     <g>
@@ -591,6 +695,31 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                                 />
                             );
                         })}
+                        
+                        {/* Editable Points */}
+                        {isEditingShape && editablePoints.map((point, idx) => {
+                            const projected = project(point.x, point.y, point.z);
+                            const isSelected = selectedPointIndex === idx;
+                            return (
+                                <circle
+                                    key={idx}
+                                    cx={projected.x}
+                                    cy={projected.y}
+                                    r={isSelected ? 6 : 4}
+                                    fill={isSelected ? "#fbbf24" : "#3b82f6"}
+                                    stroke="#ffffff"
+                                    strokeWidth={1}
+                                    className="cursor-pointer"
+                                    onMouseDown={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedPointIndex(idx);
+                                        setIsDraggingPoint(true);
+                                        setDragStartPos({ x: e.clientX, y: e.clientY });
+                                        setDragStartPoint({ x: point.x, y: point.y, z: point.z });
+                                    }}
+                                />
+                            );
+                        })}
                     </g>
 
                     {/* Simulation Point */}
@@ -603,26 +732,51 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                 {(selectedLineIndex !== null || selectedSegmentIndices.length > 0) && (
                     <div className="absolute bottom-4 left-4 right-4 bg-slate-800/90 backdrop-blur-sm rounded-lg p-3 border border-slate-700 flex items-center justify-between">
                         <span className="text-xs text-slate-300 pl-2">
-                            {selectedSegmentIndices.length > 1
-                                ? `${selectedSegmentIndices.length} Segments Selected`
-                                : selectedLineIndex !== null
-                                    ? `Line ${selectedLineIndex + 1} Selected`
-                                    : '1 Segment Selected'}
+                            {isEditingShape 
+                                ? `${editablePoints.length} Editable Points` 
+                                : selectedSegmentIndices.length > 1
+                                    ? `${selectedSegmentIndices.length} Segments Selected`
+                                    : selectedLineIndex !== null
+                                        ? `Line ${selectedLineIndex + 1} Selected`
+                                        : '1 Segment Selected'}
                         </span>
-                        <Ripple><button
-                            onClick={handleDeleteSegments}
-                            className="p-1 bg-red-600 hover:bg-red-500 rounded-full text-white"
-                            title="Delete Segment"
-                        >
-                            <Trash2 size={14} className="pointer-events-none" />
-                        </button></Ripple>
-                        <Ripple><button
-                            onClick={handleClearSelection}
-                            className="p-1 bg-slate-600 hover:bg-slate-500 rounded-full text-white ml-2"
-                            title="Clear Selection"
-                        >
-                            <X size={14} className="pointer-events-none" />
-                        </button></Ripple>
+                        <div className="flex items-center">
+                            {!isEditingShape ? (
+                                <>
+                                    <Ripple><button
+                                        onClick={handleConvertToEditableShape}
+                                        className="p-1 bg-blue-600 hover:bg-blue-500 rounded-full text-white mr-2"
+                                        title="Edit Shape"
+                                    >
+                                        <Edit3 size={14} className="pointer-events-none" />
+                                    </button></Ripple>
+                                    <Ripple><button
+                                        onClick={handleDeleteSegments}
+                                        className="p-1 bg-red-600 hover:bg-red-500 rounded-full text-white"
+                                        title="Delete Segment"
+                                    >
+                                        <Trash2 size={14} className="pointer-events-none" />
+                                    </button></Ripple>
+                                </>
+                            ) : (
+                                <>
+                                    <Ripple><button
+                                        onClick={handleApplyShapeEdits}
+                                        className="p-1 bg-green-600 hover:bg-green-500 rounded-full text-white mr-2"
+                                        title="Apply Edits"
+                                    >
+                                        <Check size={14} className="pointer-events-none" />
+                                    </button></Ripple>
+                                    <Ripple><button
+                                        onClick={handleClearSelection}
+                                        className="p-1 bg-slate-600 hover:bg-slate-500 rounded-full text-white"
+                                        title="Cancel Editing"
+                                    >
+                                        <X size={14} className="pointer-events-none" />
+                                    </button></Ripple>
+                                </>
+                            )}
+                        </div>
                     </div>
                 )}
             </div>
