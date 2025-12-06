@@ -697,6 +697,10 @@ const App: React.FC = () => {
                     onUpdateShapes={(s) => {
                       handleUpdateShapes(s);
                     }}
+                    allShapes={shapes}
+                    onSelectShape={handleSelectShape}
+                    onGroup={handleGroup}
+                    onUngroup={handleUngroup}
                     onDelete={handleDeleteShapes}
                     onClose={() => setIsRightPanelOpen(false)}
                     unit={unit}

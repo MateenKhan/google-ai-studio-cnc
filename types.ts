@@ -37,6 +37,7 @@ export interface BaseShape {
   type: ShapeType;
   x: number;
   y: number;
+  name?: string;
 }
 
 export interface RectangleShape extends BaseShape {
