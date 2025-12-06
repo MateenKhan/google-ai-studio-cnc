@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Play, X, Rotate3d, Square, ZoomIn, ZoomOut, Move, Trash2, Pause, Maximize2, Minimize2, ChevronDown, ChevronRight, Expand, Shrink, Edit3, Check, Bookmark, ArrowUp, ArrowDown, Undo2, Redo2, MousePointer2, Hand } from 'lucide-react';
+import { Play, X, Rotate3d, Square, ZoomIn, ZoomOut, Move, Trash2, Pause, Maximize2, Minimize2, ChevronDown, ChevronRight, Expand, Shrink, Edit3, Check, Bookmark, ArrowUp, ArrowDown, Undo2, Redo2, MousePointer2, Hand, GripVertical } from 'lucide-react';
 import { calculateGCodeBounds } from '../utils';
 import { MachineStatus } from '../types';
 import { serialService } from '../services/serialService';
@@ -79,9 +79,38 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({
     const [isSettingRaisePoint, setIsSettingRaisePoint] = useState(false);
     const [isSettingLowerPoint, setIsSettingLowerPoint] = useState(false);
 
-    // Fullscreen
+    // Fullscreen and Resizing
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [isMinimized, setIsMinimized] = useState(false);
+    const [editorPanelWidth, setEditorPanelWidth] = useState(400);
+    const [isResizingEditor, setIsResizingEditor] = useState(false);
+
+    const startResizingEditor = (e: React.PointerEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsResizingEditor(true);
+        document.body.style.cursor = 'col-resize';
+
+        const startX = e.clientX;
+        const startWidth = editorPanelWidth;
+
+        const handleMouseMove = (moveEvent: PointerEvent) => {
+            const deltaX = startX - moveEvent.clientX;
+            const maxWidth = window.innerWidth * 0.7; // 70% limit
+            const newWidth = Math.min(Math.max(startWidth + deltaX, 300), maxWidth);
+            setEditorPanelWidth(newWidth);
+        };
+
+        const handleMouseUp = () => {
+            setIsResizingEditor(false);
+            document.body.style.cursor = 'default';
+            window.removeEventListener('pointermove', handleMouseMove);
+            window.removeEventListener('pointerup', handleMouseUp);
+        };
+
+        window.addEventListener('pointermove', handleMouseMove);
+        window.addEventListener('pointerup', handleMouseUp);
+    };
 
     // Job State
     const [jobProgress, setJobProgress] = useState(0);
@@ -892,10 +921,23 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({
 
     const mProj = project(parseFloat(machineStatus.pos.x), parseFloat(machineStatus.pos.y), parseFloat(machineStatus.pos.z));
 
+    // Helper to render G-Code Editor content
+    const renderGCodeEditor = () => (
+        <CodeEditor
+            code={gcode}
+            onChange={onUpdateGCode}
+            onRegenerate={onRegenerate || (() => { })}
+            isManualMode={isManualMode || false}
+            generateOnlySelected={generateOnlySelected}
+            onToggleGenerateOnlySelected={onToggleGenerateOnlySelected}
+            onCursorPositionChange={handleCursorPositionChange}
+        />
+    );
+
     const content = (
         <div ref={wrapperRef} className={`bg-slate-900 border-l border-slate-800 flex flex-col h-full ${isMinimized ? 'hidden' : ''}`}>
             {/* Header */}
-            <div ref={headerRef} className="flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-slate-900 cursor-move select-none">
+            <div ref={headerRef} className="flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-slate-900 cursor-move select-none shrink-0">
                 <h2 className="font-bold text-slate-100 flex items-center gap-2">
                     <Rotate3d size={18} /> Simulator
                 </h2>
@@ -909,489 +951,531 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({
                 </div>
             </div>
 
-            {/* Main Content */}
-            <div className="flex-1 overflow-hidden relative">
-                {/* Notification Overlay */}
-                {(isSettingRaisePoint || isSettingLowerPoint) && (
-                    <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 bg-blue-600 text-white px-6 py-3 rounded-full shadow-lg flex items-center gap-3 animate-in fade-in slide-in-from-top-4">
-                        <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                        <span className="font-medium">
-                            {isSettingRaisePoint
-                                ? "Select point to RAISE tool"
-                                : "Select point to LOWER tool"}
-                        </span>
-                    </div>
-                )}
+            {/* Split Layout Container */}
+            <div className={`flex-1 flex overflow-hidden ${isFullscreen ? 'flex-row' : 'flex-col'}`}>
 
-                {/* Drag Selection Hint */}
-                <div className="absolute top-4 left-4 z-40 bg-slate-800/80 text-slate-300 text-xs px-3 py-2 rounded-lg backdrop-blur-sm border border-slate-700 flex items-center gap-2">
-                    <kbd className="px-2 py-1 bg-slate-700 rounded text-xs">Shift</kbd>
-                    <span>+ Mouse Drag to Select Multiple Paths</span>
-                </div>
-
-                {/* SVG Visualization */}
-                <svg
-                    viewBox={viewBox}
-                    className="w-full h-full bg-slate-950"
-                    onPointerDown={handlePointerDown}
-                    onPointerMove={(e) => {
-                        // Handle point dragging
-                        if (isDraggingPoint && selectedPointIndex !== null) {
-                            const deltaX = (e.clientX - dragStartPos.x) / zoom;
-                            const deltaY = (e.clientY - dragStartPos.y) / zoom;
-
-                            // Convert screen delta to world coordinates
-                            // This is a simplified approach - in a real implementation you'd need to account for projection
-                            const newX = dragStartPoint.x + deltaX;
-                            const newY = dragStartPoint.y - deltaY; // Invert Y axis
-
-                            handleUpdatePoint(selectedPointIndex, newX, newY, dragStartPoint.z);
-                        }
-
-                        // Handle regular pointer move
-                        handlePointerMove(e);
-                    }}
-                    onPointerUp={(e) => {
-                        // End point dragging
-                        if (isDraggingPoint) {
-                            setIsDraggingPoint(false);
-                        }
-
-                        // Handle regular pointer up
-                        handlePointerUp(e);
-                    }}
-                    onWheel={handleWheel}
-                    onClick={(e) => {
-                        // Only clear selection if clicking on the SVG background (not on a point or segment)
-                        if (e.target === e.currentTarget) {
-                            if (!hasDraggedRef.current) {
-                                handleClearSelection();
-                            }
-                        }
-                    }}
-                    style={{ transform: `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)` }}
-                >
-                    {/* Grid */}
-                    <defs>
-                        <pattern id="grid" width="100" height="100" patternUnits="userSpaceOnUse">
-                            <path d="M 100 0 L 0 0 0 100" fill="none" stroke="#1e293b" strokeWidth={1 / zoom} />
-                        </pattern>
-                    </defs>
-                    <rect width="100%" height="100%" fill="url(#grid)" />
-
-                    {/* Bounds Box */}
-                    <rect x={bounds.minX} y={bounds.minY} width={bounds.maxX - bounds.minX} height={bounds.maxY - bounds.minY} fill="none" stroke="#64748b" strokeWidth="0.5" strokeDasharray="5,5" />
-
-                    {/* Drag Selection Rectangle */}
-                    {isDragSelecting && dragSelectionStart && dragSelectionEnd && (
-                        <>
-                            {/* Convert screen coordinates to SVG coordinates */}
-                            {(() => {
-                                const svgRect = (document.querySelector('svg') as SVGSVGElement)?.getBoundingClientRect();
-                                if (!svgRect) return null;
-
-                                const currentScale = vbSize / (svgRect.width * zoom);
-
-                                const adjustedStartX = (dragSelectionStart.x - svgRect.left) * currentScale - vbSize / 2 - pan.x;
-                                const adjustedStartY = (dragSelectionStart.y - svgRect.top) * currentScale - vbSize / 2 - pan.y;
-                                const adjustedEndX = (dragSelectionEnd.x - svgRect.left) * currentScale - vbSize / 2 - pan.x;
-                                const adjustedEndY = (dragSelectionEnd.y - svgRect.top) * currentScale - vbSize / 2 - pan.y;
-
-                                const minX = Math.min(adjustedStartX, adjustedEndX);
-                                const maxX = Math.max(adjustedStartX, adjustedEndX);
-                                const minY = Math.min(adjustedStartY, adjustedEndY);
-                                const maxY = Math.max(adjustedStartY, adjustedEndY);
-
-                                return (
-                                    <rect
-                                        x={minX}
-                                        y={minY}
-                                        width={maxX - minX}
-                                        height={maxY - minY}
-                                        fill="rgba(59, 130, 246, 0.1)"
-                                        stroke="#3b82f6"
-                                        strokeWidth="1"
-                                        strokeDasharray="5,5"
-                                    />
-                                );
-                            })()}
-                        </>
-                    )}
-
-                    {/* G-Code Path */}
-                    <g>
-                        {segments.map((segment, idx) => {
-                            const isSelected = selectedSegmentIndices.includes(idx);
-                            const isHighlighted = cursorLineIndex !== null && segment.lineIndex === cursorLineIndex;
-                            const p1 = project(segment.x1, segment.y1, segment.z1);
-                            const p2 = project(segment.x2, segment.y2, segment.z2);
-                            return (
-                                <line
-                                    key={idx}
-                                    x1={p1.x}
-                                    y1={p1.y}
-                                    x2={p2.x}
-                                    y2={p2.y}
-                                    stroke={
-                                        isHighlighted
-                                            ? "#fbbf24" // Yellow for cursor-highlighted
-                                            : isSelected
-                                                ? "#fbbf24" // Yellow for selected
-                                                : segment.type === 'G0'
-                                                    ? "#60a5fa" // Blue for G0 moves
-                                                    : "#34d399" // Green for G1+ moves
-                                    }
-                                    strokeWidth={isHighlighted || isSelected ? 5 : 3}
-                                    opacity={isHighlighted || isSelected ? 1 : 0.7}
-                                    className="cursor-pointer"
-                                    style={{ pointerEvents: 'stroke', strokeLinecap: 'round' }}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (e.shiftKey && lastClickedIndex !== null) {
-                                            // Range selection
-                                            const start = Math.min(lastClickedIndex, idx);
-                                            const end = Math.max(lastClickedIndex, idx);
-                                            const newSelection = Array.from({ length: end - start + 1 }, (_, i) => start + i);
-                                            setSelectedSegmentIndices(prev => Array.from(new Set([...prev, ...newSelection])));
-
-                                            // Update path points for the newly selected segments
-                                            updatePathPoints([...selectedSegmentIndices, ...newSelection]);
-                                        } else if (e.ctrlKey || e.metaKey) {
-                                            // Toggle selection
-                                            const newSelection = selectedSegmentIndices.includes(idx)
-                                                ? selectedSegmentIndices.filter(i => i !== idx)
-                                                : [...selectedSegmentIndices, idx];
-                                            setSelectedSegmentIndices(newSelection);
-
-                                            // Update path points based on current selection
-                                            updatePathPoints(newSelection);
-                                        } else {
-                                            // Single selection
-                                            setSelectedSegmentIndices([idx]);
-                                            setSelectedLineIndex(segment.lineIndex);
-
-                                            // Update path points for the newly selected segment
-                                            updatePathPoints([idx]);
-                                        }
-                                        setLastClickedIndex(idx);
-                                    }}
-                                />
-                            );
-                        })}
-
-                        {/* Editable Points */}
-                        {isEditingShape && editablePoints.map((point, idx) => {
-                            const projected = project(point.x, point.y, point.z);
-                            const isSelected = selectedPointIndex === idx;
-                            const isMultiSelected = selectedPoints.includes(idx);
-                            const isStored = storedPoints.some(storedPoint =>
-                                storedPoint.segmentIndex === point.segmentIndex &&
-                                storedPoint.pointIndex === point.pointIndex
-                            );
-
-                            return (
-                                <circle
-                                    key={idx}
-                                    cx={projected.x}
-                                    cy={projected.y}
-                                    r={isSelected ? 6 : isMultiSelected ? 5 : isStored ? 4 : 4}
-                                    fill={
-                                        isSelected ? "#fbbf24" : // Yellow for single selected
-                                            isMultiSelected ? "#3b82f6" : // Blue for multi-selected
-                                                isStored ? "#10b981" : // Green for stored points
-                                                    isSettingRaisePoint ? "#fbbf24" : // Yellow when setting raise point
-                                                        isSettingLowerPoint ? "#8b5cf6" : // Purple when setting lower point
-                                                            "#ef4444" // Red for regular editable points
-                                    }
-                                    stroke="#ffffff"
-                                    strokeWidth={isSelected || isMultiSelected ? 2 : 1}
-                                    className="cursor-pointer"
-                                    onClick={(e) => {
-                                        e.stopPropagation(); // Stop event propagation
-                                        e.preventDefault(); // Prevent default behavior
-
-                                        // Handle special modes (setting raise/lower points during deletion)
-                                        if (isSettingRaisePoint) {
-                                            setToolRaisePoint({ x: point.x, y: point.y, z: point.z });
-                                            return;
-                                        }
-
-                                        if (isSettingLowerPoint) {
-                                            setToolLowerPoint({ x: point.x, y: point.y, z: point.z });
-                                            return;
-                                        }
-
-                                        // Handle point selection for editing
-                                        if (e.ctrlKey || e.metaKey) {
-                                            togglePointSelection(idx);
-                                        } else {
-                                            // Single selection
-                                            setSelectedPointIndex(idx);
-                                            setIsDraggingPoint(true);
-                                            setDragStartPos({ x: e.clientX, y: e.clientY });
-                                            setDragStartPoint({ x: point.x, y: point.y, z: point.z });
-                                        }
-                                    }}
-                                    onMouseDown={(e) => {
-                                        e.stopPropagation(); // Stop event propagation
-                                        e.preventDefault(); // Prevent default behavior
-
-                                        // Handle special modes (setting raise/lower points during deletion)
-                                        if (isSettingRaisePoint) {
-                                            setToolRaisePoint({ x: point.x, y: point.y, z: point.z });
-                                            return;
-                                        }
-
-                                        if (isSettingLowerPoint) {
-                                            setToolLowerPoint({ x: point.x, y: point.y, z: point.z });
-                                            return;
-                                        }
-
-                                        // Handle Ctrl/Cmd click for multiple selection
-                                        if (e.ctrlKey || e.metaKey) {
-                                            togglePointSelection(idx);
-                                        } else {
-                                            // Single selection
-                                            setSelectedPointIndex(idx);
-                                            setIsDraggingPoint(true);
-                                            setDragStartPos({ x: e.clientX, y: e.clientY });
-                                            setDragStartPoint({ x: point.x, y: point.y, z: point.z });
-                                        }
-                                    }}
-                                />
-                            );
-                        })}
-
-                        {/* Path Points - Visible when segments are selected */}
-                        {pathPoints.map((point, idx) => {
-                            const projected = project(point.x, point.y, point.z);
-                            const isSelected = selectedPoints.includes(idx);
-                            const isStored = storedPoints.some(storedPoint =>
-                                storedPoint.segmentIndex === point.segmentIndex &&
-                                storedPoint.pointIndex === 0 // Assuming point index 0 for path points
-                            );
-
-                            return (
-                                <circle
-                                    key={`path-${idx}`}
-                                    cx={projected.x}
-                                    cy={projected.y}
-                                    r={isSelected ? 5 : isStored ? 4 : 3}
-                                    fill={
-                                        isSelected ? "#3b82f6" : // Blue for selected
-                                            isStored ? "#10b981" : // Green for stored points
-                                                isSettingRaisePoint ? "#fbbf24" : // Yellow when setting raise point
-                                                    isSettingLowerPoint ? "#8b5cf6" : // Purple when setting lower point
-                                                        "#60a5fa" // Light blue for regular path points
-                                    }
-                                    stroke="#ffffff"
-                                    strokeWidth={isSelected ? 2 : 1}
-                                    className="cursor-pointer"
-                                    onClick={(e) => {
-                                        e.stopPropagation(); // Stop event propagation
-                                        e.preventDefault(); // Prevent default behavior
-
-                                        // Handle special modes (setting raise/lower points during deletion)
-                                        if (isSettingRaisePoint) {
-                                            setToolRaisePoint({ x: point.x, y: point.y, z: point.z });
-                                            return;
-                                        }
-
-                                        if (isSettingLowerPoint) {
-                                            setToolLowerPoint({ x: point.x, y: point.y, z: point.z });
-                                            return;
-                                        }
-
-                                        // Handle regular point selection
-                                        if (e.ctrlKey || e.metaKey) {
-                                            // Toggle selection
-                                            if (selectedPoints.includes(idx)) {
-                                                setSelectedPoints(prev => prev.filter(i => i !== idx));
-                                            } else {
-                                                setSelectedPoints(prev => [...prev, idx]);
-                                            }
-                                        } else {
-                                            // Single selection
-                                            setSelectedPoints([idx]);
-                                        }
-
-                                        // Also select the segment this point belongs to
-                                        if (!selectedSegmentIndices.includes(point.segmentIndex)) {
-                                            setSelectedSegmentIndices(prev => [...prev, point.segmentIndex]);
-                                        }
-                                    }}
-                                    onMouseDown={(e) => {
-                                        e.stopPropagation(); // Stop event propagation
-                                        e.preventDefault(); // Prevent default behavior
-                                    }}
-                                />
-                            );
-                        })}
-                    </g>
-
-                    {/* Simulation Point */}
-                    {isSimulating && (
-                        <circle cx={simProj.x} cy={simProj.y} r="3" fill="#fbbf24" />
-                    )}
-                </svg>
-
-                {/* Selection Info Overlay */}
-
-            </div>
-
-            {/* G-Code Accordion Section */}
-            <div className="bg-slate-900 border-t border-slate-800 shrink-0">
-                <Ripple>
-                    <button
-                        onClick={() => setIsGCodeExpanded(!isGCodeExpanded)}
-                        className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-800/50 transition-colors cursor-pointer"
-                        aria-expanded={isGCodeExpanded}
-                        aria-controls="gcode-accordion-content"
-                    >
-                        <h3 className="text-sm font-semibold text-slate-300 uppercase flex items-center gap-2">
-                            {isGCodeExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                            G-Code Editor
-                        </h3>
-                        {isManualMode && (
-                            <span className="text-xs text-yellow-500 bg-yellow-900/20 px-2 py-1 rounded">Manual Mode</span>
-                        )}
-                    </button>
-                </Ripple>
-                <div
-                    id="gcode-accordion-content"
-                    className="overflow-hidden transition-all duration-300 ease-in-out"
-                    style={{
-                        maxHeight: isGCodeExpanded ? '1000px' : '0px'
-                    }}
-                >
-                    <div className="border-t border-slate-800">
-                        <CodeEditor
-                            code={gcode}
-                            onChange={onUpdateGCode}
-                            onRegenerate={onRegenerate || (() => { })}
-                            isManualMode={isManualMode || false}
-                            generateOnlySelected={generateOnlySelected}
-                            onToggleGenerateOnlySelected={onToggleGenerateOnlySelected}
-                            onCursorPositionChange={handleCursorPositionChange}
-                        />
-                    </div>
-                </div>
-            </div>
-
-            {/* Job Control Accordion */}
-            <div className="bg-slate-900 border-t border-slate-800 shrink-0">
-                <Ripple>
-                    <button
-                        onClick={() => setIsJobControlExpanded(!isJobControlExpanded)}
-                        className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-800/50 transition-colors cursor-pointer"
-                        aria-expanded={isJobControlExpanded}
-                        aria-controls="job-control-accordion-content"
-                    >
-                        <h3 className="text-sm font-semibold text-slate-300 uppercase flex items-center gap-2">
-                            {isJobControlExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                            Machine Job Control
-                        </h3>
-                        {jobTotal > 0 && (
-                            <span className="text-xs text-sky-400">{Math.round((jobProgress / jobTotal) * 100)}%</span>
-                        )}
-                    </button>
-                </Ripple>
-                <div
-                    id="job-control-accordion-content"
-                    className="overflow-hidden transition-all duration-300 ease-in-out"
-                    style={{
-                        maxHeight: isJobControlExpanded ? '200px' : '0px'
-                    }}
-                >
-                    <div className="border-t border-slate-800 p-4">
-                        {jobTotal > 0 && (
-                            <div className="w-full bg-slate-800 rounded-full h-2 mb-4 overflow-hidden">
-                                <div className="bg-green-500 h-full transition-all duration-300" style={{ width: `${(jobProgress / jobTotal) * 100}%` }}></div>
+                {/* Left Side (Viewer) / Top Side */}
+                <div className="flex-1 flex flex-col overflow-hidden relative min-w-0">
+                    {/* Main Content (Viewer) */}
+                    <div className="flex-1 overflow-hidden relative bg-slate-950">
+                        {/* Notification Overlay */}
+                        {(isSettingRaisePoint || isSettingLowerPoint) && (
+                            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 bg-blue-600 text-white px-6 py-3 rounded-full shadow-lg flex items-center gap-3 animate-in fade-in slide-in-from-top-4 pointer-events-none">
+                                <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                                <span className="font-medium">
+                                    {isSettingRaisePoint
+                                        ? "Select point to RAISE tool"
+                                        : "Select point to LOWER tool"}
+                                </span>
                             </div>
                         )}
-                        <div className="flex gap-2">
-                            <Ripple disabled={!gcode || !isConnected || isJobRunning}>
-                                <button
-                                    onClick={handleRunJob}
-                                    disabled={!gcode || !isConnected || isJobRunning}
-                                    className="flex-1 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center gap-2 text-white font-medium"
-                                >
-                                    <Play size={16} /> Run on Machine
-                                </button>
-                            </Ripple>
-                            <Ripple disabled={!isConnected || !isJobRunning}>
-                                <button
-                                    onClick={handlePauseJob}
-                                    disabled={!isConnected || !isJobRunning}
-                                    className="px-4 py-2 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center text-white"
-                                >
-                                    <Pause size={16} />
-                                </button>
-                            </Ripple>
-                            <Ripple disabled={!isConnected || (!isJobRunning && jobProgress === 0)}>
-                                <button
-                                    onClick={handleStopJob}
-                                    disabled={!isConnected || (!isJobRunning && jobProgress === 0)}
-                                    className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center text-white"
-                                >
-                                    <Square size={16} />
-                                </button>
-                            </Ripple>
-                        </div>
-                        {!isConnected && <div className="text-center text-xs text-red-400 mt-2">Machine Disconnected</div>}
-                    </div>
-                </div>
-            </div>
 
-            {/* Simulation Controls */}
-            <div className="bg-slate-800 border-t border-slate-700 shrink-0 z-20">
-                <div className="p-2 flex items-center gap-4 px-4">
-                    <Ripple>
-                        <button
-                            onClick={handleToggleSimulation}
-                            className={`p-2 rounded-full ${isSimulating ? 'bg-yellow-600 text-white' : 'bg-sky-600 text-white'} hover:opacity-90`}
-                        >
-                            {isSimulating ? <Pause size={16} /> : <Play size={16} />}
-                        </button>
-                    </Ripple>
-                    <Ripple>
-                        <button onClick={handleSimStop} className="p-2 text-slate-400 hover:text-white">
-                            <Square size={16} />
-                        </button>
-                    </Ripple>
-
-                    <div className="flex-1 flex flex-col gap-1">
-                        <div className="flex justify-between text-xs text-slate-400">
-                            <span>Simulation Progress</span>
-                            <span>{Math.round(simProgress * 100)}%</span>
+                        {/* Drag Selection Hint */}
+                        <div className="absolute top-4 left-4 z-40 bg-slate-800/80 text-slate-300 text-xs px-3 py-2 rounded-lg backdrop-blur-sm border border-slate-700 flex items-center gap-2 pointer-events-none">
+                            <kbd className="px-2 py-1 bg-slate-700 rounded text-xs">Shift</kbd>
+                            <span>+ Mouse Drag to Select Multiple Paths</span>
                         </div>
-                        <input
-                            type="range"
-                            min="0" max="1" step="0.001"
-                            value={simProgress}
-                            onChange={(e) => {
-                                setSimProgress(parseFloat(e.target.value));
-                                setIsSimulating(false);
+
+                        {/* SVG Visualization */}
+                        <svg
+                            viewBox={viewBox}
+                            className="w-full h-full bg-slate-950 touch-none"
+                            onPointerDown={handlePointerDown}
+                            onPointerMove={(e) => {
+                                // Handle point dragging
+                                if (isDraggingPoint && selectedPointIndex !== null) {
+                                    const deltaX = (e.clientX - dragStartPos.x) / zoom;
+                                    const deltaY = (e.clientY - dragStartPos.y) / zoom;
+
+                                    // Convert screen delta to world coordinates
+                                    // This is a simplified approach - in a real implementation you'd need to account for projection
+                                    const newX = dragStartPoint.x + deltaX;
+                                    const newY = dragStartPoint.y - deltaY; // Invert Y axis
+
+                                    handleUpdatePoint(selectedPointIndex, newX, newY, dragStartPoint.z);
+                                }
+
+                                // Handle regular pointer move
+                                handlePointerMove(e);
                             }}
-                            className="w-full accent-sky-500 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer"
-                        />
+                            onPointerUp={(e) => {
+                                // End point dragging
+                                if (isDraggingPoint) {
+                                    setIsDraggingPoint(false);
+                                }
+
+                                // Handle regular pointer up
+                                handlePointerUp(e);
+                            }}
+                            onWheel={handleWheel}
+                            onClick={(e) => {
+                                // Only clear selection if clicking on the SVG background (not on a point or segment)
+                                if (e.target === e.currentTarget) {
+                                    if (!hasDraggedRef.current) {
+                                        handleClearSelection();
+                                    }
+                                }
+                            }}
+                            style={{ transform: `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)` }}
+                        >
+                            {/* Grid */}
+                            <defs>
+                                <pattern id="grid" width="100" height="100" patternUnits="userSpaceOnUse">
+                                    <path d="M 100 0 L 0 0 0 100" fill="none" stroke="#1e293b" strokeWidth={1 / zoom} />
+                                </pattern>
+                            </defs>
+                            <rect width="100%" height="100%" fill="url(#grid)" />
+
+                            {/* Bounds Box */}
+                            <rect x={bounds.minX} y={bounds.minY} width={bounds.maxX - bounds.minX} height={bounds.maxY - bounds.minY} fill="none" stroke="#64748b" strokeWidth="0.5" strokeDasharray="5,5" />
+
+                            {/* Drag Selection Rectangle */}
+                            {isDragSelecting && dragSelectionStart && dragSelectionEnd && (
+                                <>
+                                    {/* Convert screen coordinates to SVG coordinates */}
+                                    {(() => {
+                                        const svgRect = (document.querySelector('svg') as SVGSVGElement)?.getBoundingClientRect();
+                                        if (!svgRect) return null;
+
+                                        const currentScale = vbSize / (svgRect.width * zoom);
+
+                                        const adjustedStartX = (dragSelectionStart.x - svgRect.left) * currentScale - vbSize / 2 - pan.x;
+                                        const adjustedStartY = (dragSelectionStart.y - svgRect.top) * currentScale - vbSize / 2 - pan.y;
+                                        const adjustedEndX = (dragSelectionEnd.x - svgRect.left) * currentScale - vbSize / 2 - pan.x;
+                                        const adjustedEndY = (dragSelectionEnd.y - svgRect.top) * currentScale - vbSize / 2 - pan.y;
+
+                                        const minX = Math.min(adjustedStartX, adjustedEndX);
+                                        const maxX = Math.max(adjustedStartX, adjustedEndX);
+                                        const minY = Math.min(adjustedStartY, adjustedEndY);
+                                        const maxY = Math.max(adjustedStartY, adjustedEndY);
+
+                                        return (
+                                            <rect
+                                                x={minX}
+                                                y={minY}
+                                                width={maxX - minX}
+                                                height={maxY - minY}
+                                                fill="rgba(59, 130, 246, 0.1)"
+                                                stroke="#3b82f6"
+                                                strokeWidth="1"
+                                                strokeDasharray="5,5"
+                                            />
+                                        );
+                                    })()}
+                                </>
+                            )}
+
+                            {/* G-Code Path */}
+                            <g>
+                                {segments.map((segment, idx) => {
+                                    const isSelected = selectedSegmentIndices.includes(idx);
+                                    const isHighlighted = cursorLineIndex !== null && segment.lineIndex === cursorLineIndex;
+                                    const p1 = project(segment.x1, segment.y1, segment.z1);
+                                    const p2 = project(segment.x2, segment.y2, segment.z2);
+                                    return (
+                                        <line
+                                            key={idx}
+                                            x1={p1.x}
+                                            y1={p1.y}
+                                            x2={p2.x}
+                                            y2={p2.y}
+                                            stroke={
+                                                isHighlighted
+                                                    ? "#fbbf24" // Yellow for cursor-highlighted
+                                                    : isSelected
+                                                        ? "#fbbf24" // Yellow for selected
+                                                        : segment.type === 'G0'
+                                                            ? "#60a5fa" // Blue for G0 moves
+                                                            : "#34d399" // Green for G1+ moves
+                                            }
+                                            strokeWidth={isHighlighted || isSelected ? 5 : 3}
+                                            opacity={isHighlighted || isSelected ? 1 : 0.7}
+                                            className="cursor-pointer"
+                                            style={{ pointerEvents: 'stroke', strokeLinecap: 'round' }}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (e.shiftKey && lastClickedIndex !== null) {
+                                                    // Range selection
+                                                    const start = Math.min(lastClickedIndex, idx);
+                                                    const end = Math.max(lastClickedIndex, idx);
+                                                    const newSelection = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+                                                    setSelectedSegmentIndices(prev => Array.from(new Set([...prev, ...newSelection])));
+
+                                                    // Update path points for the newly selected segments
+                                                    updatePathPoints([...selectedSegmentIndices, ...newSelection]);
+                                                } else if (e.ctrlKey || e.metaKey) {
+                                                    // Toggle selection
+                                                    const newSelection = selectedSegmentIndices.includes(idx)
+                                                        ? selectedSegmentIndices.filter(i => i !== idx)
+                                                        : [...selectedSegmentIndices, idx];
+                                                    setSelectedSegmentIndices(newSelection);
+
+                                                    // Update path points based on current selection
+                                                    updatePathPoints(newSelection);
+                                                } else {
+                                                    // Single selection
+                                                    setSelectedSegmentIndices([idx]);
+                                                    setSelectedLineIndex(segment.lineIndex);
+
+                                                    // Update path points for the newly selected segment
+                                                    updatePathPoints([idx]);
+                                                }
+                                                setLastClickedIndex(idx);
+                                            }}
+                                        />
+                                    );
+                                })}
+
+                                {/* Editable Points */}
+                                {isEditingShape && editablePoints.map((point, idx) => {
+                                    const projected = project(point.x, point.y, point.z);
+                                    const isSelected = selectedPointIndex === idx;
+                                    const isMultiSelected = selectedPoints.includes(idx);
+                                    const isStored = storedPoints.some(storedPoint =>
+                                        storedPoint.segmentIndex === point.segmentIndex &&
+                                        storedPoint.pointIndex === point.pointIndex
+                                    );
+
+                                    return (
+                                        <circle
+                                            key={idx}
+                                            cx={projected.x}
+                                            cy={projected.y}
+                                            r={isSelected ? 6 : isMultiSelected ? 5 : isStored ? 4 : 4}
+                                            fill={
+                                                isSelected ? "#fbbf24" : // Yellow for single selected
+                                                    isMultiSelected ? "#3b82f6" : // Blue for multi-selected
+                                                        isStored ? "#10b981" : // Green for stored points
+                                                            isSettingRaisePoint ? "#fbbf24" : // Yellow when setting raise point
+                                                                isSettingLowerPoint ? "#8b5cf6" : // Purple when setting lower point
+                                                                    "#ef4444" // Red for regular editable points
+                                            }
+                                            stroke="#ffffff"
+                                            strokeWidth={isSelected || isMultiSelected ? 2 : 1}
+                                            className="cursor-pointer"
+                                            onClick={(e) => {
+                                                e.stopPropagation(); // Stop event propagation
+                                                e.preventDefault(); // Prevent default behavior
+
+                                                // Handle special modes (setting raise/lower points during deletion)
+                                                if (isSettingRaisePoint) {
+                                                    setToolRaisePoint({ x: point.x, y: point.y, z: point.z });
+                                                    return;
+                                                }
+
+                                                if (isSettingLowerPoint) {
+                                                    setToolLowerPoint({ x: point.x, y: point.y, z: point.z });
+                                                    return;
+                                                }
+
+                                                // Handle point selection for editing
+                                                if (e.ctrlKey || e.metaKey) {
+                                                    togglePointSelection(idx);
+                                                } else {
+                                                    // Single selection
+                                                    setSelectedPointIndex(idx);
+                                                    setIsDraggingPoint(true);
+                                                    setDragStartPos({ x: e.clientX, y: e.clientY });
+                                                    setDragStartPoint({ x: point.x, y: point.y, z: point.z });
+                                                }
+                                            }}
+                                            onMouseDown={(e) => {
+                                                e.stopPropagation(); // Stop event propagation
+                                                e.preventDefault(); // Prevent default behavior
+
+                                                // Handle special modes (setting raise/lower points during deletion)
+                                                if (isSettingRaisePoint) {
+                                                    setToolRaisePoint({ x: point.x, y: point.y, z: point.z });
+                                                    return;
+                                                }
+
+                                                if (isSettingLowerPoint) {
+                                                    setToolLowerPoint({ x: point.x, y: point.y, z: point.z });
+                                                    return;
+                                                }
+
+                                                // Handle Ctrl/Cmd click for multiple selection
+                                                if (e.ctrlKey || e.metaKey) {
+                                                    togglePointSelection(idx);
+                                                } else {
+                                                    // Single selection
+                                                    setSelectedPointIndex(idx);
+                                                    setIsDraggingPoint(true);
+                                                    setDragStartPos({ x: e.clientX, y: e.clientY });
+                                                    setDragStartPoint({ x: point.x, y: point.y, z: point.z });
+                                                }
+                                            }}
+                                        />
+                                    );
+                                })}
+
+                                {/* Path Points - Visible when segments are selected */}
+                                {pathPoints.map((point, idx) => {
+                                    const projected = project(point.x, point.y, point.z);
+                                    const isSelected = selectedPoints.includes(idx);
+                                    const isStored = storedPoints.some(storedPoint =>
+                                        storedPoint.segmentIndex === point.segmentIndex &&
+                                        storedPoint.pointIndex === 0 // Assuming point index 0 for path points
+                                    );
+
+                                    return (
+                                        <circle
+                                            key={`path-${idx}`}
+                                            cx={projected.x}
+                                            cy={projected.y}
+                                            r={isSelected ? 5 : isStored ? 4 : 3}
+                                            fill={
+                                                isSelected ? "#3b82f6" : // Blue for selected
+                                                    isStored ? "#10b981" : // Green for stored points
+                                                        isSettingRaisePoint ? "#fbbf24" : // Yellow when setting raise point
+                                                            isSettingLowerPoint ? "#8b5cf6" : // Purple when setting lower point
+                                                                "#60a5fa" // Light blue for regular path points
+                                            }
+                                            stroke="#ffffff"
+                                            strokeWidth={isSelected ? 2 : 1}
+                                            className="cursor-pointer"
+                                            onClick={(e) => {
+                                                e.stopPropagation(); // Stop event propagation
+                                                e.preventDefault(); // Prevent default behavior
+
+                                                // Handle special modes (setting raise/lower points during deletion)
+                                                if (isSettingRaisePoint) {
+                                                    setToolRaisePoint({ x: point.x, y: point.y, z: point.z });
+                                                    return;
+                                                }
+
+                                                if (isSettingLowerPoint) {
+                                                    setToolLowerPoint({ x: point.x, y: point.y, z: point.z });
+                                                    return;
+                                                }
+
+                                                // Handle regular point selection
+                                                if (e.ctrlKey || e.metaKey) {
+                                                    // Toggle selection
+                                                    if (selectedPoints.includes(idx)) {
+                                                        setSelectedPoints(prev => prev.filter(i => i !== idx));
+                                                    } else {
+                                                        setSelectedPoints(prev => [...prev, idx]);
+                                                    }
+                                                } else {
+                                                    // Single selection
+                                                    setSelectedPoints([idx]);
+                                                }
+
+                                                // Also select the segment this point belongs to
+                                                if (!selectedSegmentIndices.includes(point.segmentIndex)) {
+                                                    setSelectedSegmentIndices(prev => [...prev, point.segmentIndex]);
+                                                }
+                                            }}
+                                            onMouseDown={(e) => {
+                                                e.stopPropagation(); // Stop event propagation
+                                                e.preventDefault(); // Prevent default behavior
+                                            }}
+                                        />
+                                    );
+                                })}
+                            </g>
+
+                            {/* Simulation Point */}
+                            {isSimulating && (
+                                <circle cx={simProj.x} cy={simProj.y} r="3" fill="#fbbf24" />
+                            )}
+                        </svg>
+
+                        {/* Simulation Controls (Floating in Bottom) */}
+                        <div className="absolute bottom-0 left-0 right-0 bg-slate-800/90 backdrop-blur-sm border-t border-slate-700 z-20">
+                            <div className="p-2 flex items-center gap-4 px-4">
+                                <Ripple>
+                                    <button
+                                        onClick={handleToggleSimulation}
+                                        className={`p-2 rounded-full ${isSimulating ? 'bg-yellow-600 text-white' : 'bg-sky-600 text-white'} hover:opacity-90`}
+                                    >
+                                        {isSimulating ? <Pause size={16} /> : <Play size={16} />}
+                                    </button>
+                                </Ripple>
+                                <Ripple>
+                                    <button onClick={handleSimStop} className="p-2 text-slate-400 hover:text-white">
+                                        <Square size={16} />
+                                    </button>
+                                </Ripple>
+
+                                <div className="flex-1 flex flex-col gap-1">
+                                    <div className="flex justify-between text-xs text-slate-400">
+                                        <span>Simulation Progress</span>
+                                        <span>{Math.round(simProgress * 100)}%</span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="0" max="1" step="0.001"
+                                        value={simProgress}
+                                        onChange={(e) => {
+                                            setSimProgress(parseFloat(e.target.value));
+                                            setIsSimulating(false);
+                                        }}
+                                        className="w-full accent-sky-500 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                                    />
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs text-slate-400">Speed:</span>
+                                    <select
+                                        value={simSpeed}
+                                        onChange={(e) => setSimSpeed(parseFloat(e.target.value))}
+                                        className="bg-slate-900 border border-slate-700 text-xs text-slate-300 rounded px-1 py-1"
+                                    >
+                                        <option value="0.5">0.5x</option>
+                                        <option value="1">1x</option>
+                                        <option value="2">2x</option>
+                                        <option value="5">5x</option>
+                                        <option value="10">10x</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs text-slate-400">Speed:</span>
-                        <select
-                            value={simSpeed}
-                            onChange={(e) => setSimSpeed(parseFloat(e.target.value))}
-                            className="bg-slate-900 border border-slate-700 text-xs text-slate-300 rounded px-1 py-1"
-                        >
-                            <option value="0.5">0.5x</option>
-                            <option value="1">1x</option>
-                            <option value="2">2x</option>
-                            <option value="5">5x</option>
-                            <option value="10">10x</option>
-                        </select>
-                    </div>
+                    {/* Bottom Accordions (Only show if NOT in fullscreen) */}
+                    {!isFullscreen && (
+                        <div className="flex flex-col shrink-0">
+                            {/* G-Code Accordion Section */}
+                            <div className="bg-slate-900 border-t border-slate-800 shrink-0">
+                                <Ripple>
+                                    <button
+                                        onClick={() => setIsGCodeExpanded(!isGCodeExpanded)}
+                                        className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-800/50 transition-colors cursor-pointer"
+                                        aria-expanded={isGCodeExpanded}
+                                        aria-controls="gcode-accordion-content"
+                                    >
+                                        <h3 className="text-sm font-semibold text-slate-300 uppercase flex items-center gap-2">
+                                            {isGCodeExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                                            G-Code Editor
+                                        </h3>
+                                        {isManualMode && (
+                                            <span className="text-xs text-yellow-500 bg-yellow-900/20 px-2 py-1 rounded">Manual Mode</span>
+                                        )}
+                                    </button>
+                                </Ripple>
+                                <div
+                                    id="gcode-accordion-content"
+                                    className="overflow-hidden transition-all duration-300 ease-in-out"
+                                    style={{
+                                        maxHeight: isGCodeExpanded ? '1000px' : '0px'
+                                    }}
+                                >
+                                    <div className="border-t border-slate-800">
+                                        {renderGCodeEditor()}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Job Control Accordion */}
+                            <div className="bg-slate-900 border-t border-slate-800 shrink-0">
+                                <Ripple>
+                                    <button
+                                        onClick={() => setIsJobControlExpanded(!isJobControlExpanded)}
+                                        className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-800/50 transition-colors cursor-pointer"
+                                        aria-expanded={isJobControlExpanded}
+                                        aria-controls="job-control-accordion-content"
+                                    >
+                                        <h3 className="text-sm font-semibold text-slate-300 uppercase flex items-center gap-2">
+                                            {isJobControlExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                                            Machine Job Control
+                                        </h3>
+                                        {jobTotal > 0 && (
+                                            <span className="text-xs text-sky-400">{Math.round((jobProgress / jobTotal) * 100)}%</span>
+                                        )}
+                                    </button>
+                                </Ripple>
+                                <div
+                                    id="job-control-accordion-content"
+                                    className="overflow-hidden transition-all duration-300 ease-in-out"
+                                    style={{
+                                        maxHeight: isJobControlExpanded ? '200px' : '0px'
+                                    }}
+                                >
+                                    <div className="border-t border-slate-800 p-4">
+                                        {jobTotal > 0 && (
+                                            <div className="w-full bg-slate-800 rounded-full h-2 mb-4 overflow-hidden">
+                                                <div className="bg-green-500 h-full transition-all duration-300" style={{ width: `${(jobProgress / jobTotal) * 100}%` }}></div>
+                                            </div>
+                                        )}
+                                        <div className="flex gap-2">
+                                            <Ripple disabled={!gcode || !isConnected || isJobRunning}>
+                                                <button
+                                                    onClick={handleRunJob}
+                                                    disabled={!gcode || !isConnected || isJobRunning}
+                                                    className="flex-1 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center gap-2 text-white font-medium"
+                                                >
+                                                    <Play size={16} /> Run on Machine
+                                                </button>
+                                            </Ripple>
+                                            <Ripple disabled={!isConnected || !isJobRunning}>
+                                                <button
+                                                    onClick={handlePauseJob}
+                                                    disabled={!isConnected || !isJobRunning}
+                                                    className="px-4 py-2 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center text-white"
+                                                >
+                                                    <Pause size={16} />
+                                                </button>
+                                            </Ripple>
+                                            <Ripple disabled={!isConnected || (!isJobRunning && jobProgress === 0)}>
+                                                <button
+                                                    onClick={handleStopJob}
+                                                    disabled={!isConnected || (!isJobRunning && jobProgress === 0)}
+                                                    className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed rounded flex items-center justify-center text-white"
+                                                >
+                                                    <Square size={16} />
+                                                </button>
+                                            </Ripple>
+                                        </div>
+                                        {!isConnected && <div className="text-center text-xs text-red-400 mt-2">Machine Disconnected</div>}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
+
+                {/* Right Side Panel (Visible ONLY in fullscreen) */}
+                {isFullscreen && (
+                    <div
+                        className="relative z-30 bg-slate-800 border-l border-slate-700 shadow-2xl flex flex-col shrink-0"
+                        style={{ width: `${editorPanelWidth}px` }}
+                    >
+                        {/* Resize Handle */}
+                        <div
+                            className="absolute left-0 top-0 bottom-0 w-4 -ml-2 cursor-col-resize group z-[100] flex items-center justify-center touch-none"
+                            onPointerDown={startResizingEditor}
+                            title="Drag to resize"
+                        >
+                            {/* Invisible Hit Area */}
+                            <div className="absolute inset-y-0 w-4 bg-transparent" />
+
+                            {/* Visible Line - Always semi-visible, bright on hover */}
+                            <div className="w-0.5 h-full bg-slate-600 group-hover:bg-sky-400 transition-colors" />
+
+                            {/* Explicit Handle Icon */}
+                            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-slate-700 border border-slate-500 rounded-full py-2 px-0.5 shadow-xl group-hover:border-sky-400 group-hover:bg-slate-600 group-hover:text-sky-400 text-slate-300 transition-all">
+                                <GripVertical size={16} />
+                            </div>
+                        </div>
+
+                        {/* Title Bar for Side Panel */}
+                        <div className="px-4 py-3 border-b border-slate-700 bg-slate-900 font-semibold text-slate-300 uppercase text-sm flex items-center gap-2 shrink-0">
+                            <span className="flex-1">G-Code Editor</span>
+                            {isManualMode && (
+                                <span className="text-xs text-yellow-500 bg-yellow-900/20 px-2 py-1 rounded">Manual Mode</span>
+                            )}
+                        </div>
+
+                        {/* Editor Content */}
+                        <div className="flex-1 overflow-hidden relative">
+                            {renderGCodeEditor()}
+                        </div>
+
+                        {/* Job Control can also be here or keep it below? For now let's just put Editor here as requested */}
+                    </div>
+                )}
             </div>
         </div>
 
