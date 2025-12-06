@@ -143,7 +143,7 @@ const Canvas: React.FC<CanvasProps> = ({
 
             const zoomSensitivity = 0.001;
             const zoomFactor = Math.exp(-e.deltaY * zoomSensitivity);
-            const newZoom = Math.min(Math.max(currentZoom * zoomFactor, 0.05), 10);
+            const newZoom = Math.min(Math.max(currentZoom * zoomFactor, 0.05), 20);
 
             const rect = container ? container.getBoundingClientRect() : { left: 0, top: 0 };
             const mouseX = e.clientX - rect.left;
@@ -182,7 +182,7 @@ const Canvas: React.FC<CanvasProps> = ({
                 );
 
                 const scale = dist / pinchStartDistRef.current;
-                const newZoom = Math.min(Math.max(startZoomRef.current * scale, 0.05), 10);
+                const newZoom = Math.min(Math.max(startZoomRef.current * scale, 0.05), 20);
 
                 const cx = touchStartCenterRef.current.x;
                 const cy = touchStartCenterRef.current.y;

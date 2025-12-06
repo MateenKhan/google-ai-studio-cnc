@@ -1,7 +1,7 @@
 
 import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Square, Circle, Type, MousePointer2, Hand, Ruler, Heart, Pen, Minus, LayoutTemplate, ChevronDown, Upload, Download, Group, Ungroup, Split, Undo2, Redo2, LassoSelect, Hexagon, Spline } from 'lucide-react';
+import { Square, Circle, Type, MousePointer2, Hand, Ruler, Heart, Pen, Minus, LayoutTemplate, ChevronDown, Upload, Download, Group, Ungroup, Split, Undo2, Redo2, LassoSelect, Hexagon, Spline, Highlighter } from 'lucide-react';
 import { ShapeType, Tool, Unit } from '../types';
 import Ripple from './Ripple';
 
@@ -45,11 +45,34 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const btnClass = (isActive: boolean) =>
-    `p-2 rounded-lg transition-all flex items-center justify-center border border-slate-700 shrink-0 ${isActive
-      ? 'bg-sky-600 text-white shadow shadow-sky-900/40'
-      : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
-    }`;
+  const btnClass = (isActive: boolean, color: "sky" | "rose" | "indigo" | "cyan" | "slate" = "sky") => {
+    let activeColorClass = 'bg-sky-600 text-white shadow shadow-sky-900/40';
+    let hoverColorClass = 'hover:bg-slate-700 hover:text-slate-200'; // Default text color is handled in base
+
+    switch (color) {
+      case 'rose': activeColorClass = 'bg-rose-600 text-white shadow shadow-rose-900/40'; break;
+      case 'indigo': activeColorClass = 'bg-indigo-600 text-white shadow shadow-indigo-900/40'; break;
+      case 'cyan': activeColorClass = 'bg-cyan-600 text-white shadow shadow-cyan-900/40'; break;
+      case 'slate': activeColorClass = 'bg-slate-600 text-white shadow shadow-slate-900/40'; break; // For generic active if needed
+      case 'sky': default: activeColorClass = 'bg-sky-600 text-white shadow shadow-sky-900/40'; break;
+    }
+
+    if (!isActive) {
+      // We can add subtle color hints on hover if we want, but for now specific active color + slate inactive is standard
+      // Maybe color text on hover?
+      switch (color) {
+        case 'rose': hoverColorClass = 'hover:bg-rose-500/20 hover:text-rose-400'; break;
+        case 'indigo': hoverColorClass = 'hover:bg-indigo-500/20 hover:text-indigo-400'; break;
+        case 'cyan': hoverColorClass = 'hover:bg-cyan-500/20 hover:text-cyan-400'; break;
+        case 'sky': hoverColorClass = 'hover:bg-sky-500/20 hover:text-sky-400'; break;
+      }
+    }
+
+    return `p-2 rounded-lg transition-all flex items-center justify-center border border-slate-700 shrink-0 ${isActive
+      ? activeColorClass
+      : `bg-slate-800 text-slate-400 ${hoverColorClass}`
+      }`;
+  };
 
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const [groupCoords, setGroupCoords] = useState<{ left: number, bottom: number } | null>(null);
@@ -185,10 +208,10 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
 
       <div className="flex gap-2 items-center">
         {/* Undo/Redo */}
-        <Ripple><button onClick={onUndo} className={btnClass(false)} title="Undo (Ctrl+Z)">
+        <Ripple><button onClick={onUndo} className={btnClass(false, 'rose')} title="Undo (Ctrl+Z)">
           <Undo2 size={18} />
         </button></Ripple>
-        <Ripple><button onClick={onRedo} className={btnClass(false)} title="Redo (Ctrl+Y)">
+        <Ripple><button onClick={onRedo} className={btnClass(false, 'rose')} title="Redo (Ctrl+Y)">
           <Redo2 size={18} />
         </button></Ripple>
         <div className="w-px h-8 bg-slate-700 mx-1 shrink-0"></div>
@@ -203,13 +226,14 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
           items={[
             { id: Tool.SELECT, icon: <MousePointer2 size={18} />, title: "Rectangle Select" },
             { id: Tool.LASSO, icon: <LassoSelect size={18} />, title: "Lasso Select" },
-            { id: Tool.POLYGON_SELECT, icon: <Hexagon size={18} />, title: "Polygon Select (Area Path)" }
+            { id: Tool.POLYGON_SELECT, icon: <Hexagon size={18} />, title: "Polygon Select (Area Path)" },
+            { id: Tool.FENCE_SELECT, icon: <Highlighter size={18} />, title: "Free Path Select (Fence)" }
           ]}
         />
-        <Ripple><button onClick={() => onSelectTool(Tool.PAN)} className={btnClass(activeTool === Tool.PAN)} title="Pan">
+        <Ripple><button onClick={() => onSelectTool(Tool.PAN)} className={btnClass(activeTool === Tool.PAN, 'indigo')} title="Pan">
           <Hand size={18} />
         </button></Ripple>
-        <Ripple><button onClick={onToggleDimensions} className={btnClass(showDimensions)} title="Dimensions">
+        <Ripple><button onClick={onToggleDimensions} className={btnClass(showDimensions, 'indigo')} title="Dimensions">
           <Ruler size={18} />
         </button></Ripple>
         <div className="w-px h-8 bg-slate-700 mx-1 shrink-0"></div>
@@ -248,9 +272,9 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
           groupTitle="Arrange"
           color="amber"
           items={[
+            { id: 'EXPLODE', icon: <Split size={18} />, title: "Explode Shape", onClick: onExplode },
             { id: 'GROUP', icon: <Group size={18} />, title: "Group Selected", onClick: onGroup },
             { id: 'UNGROUP', icon: <Ungroup size={18} />, title: "Ungroup", onClick: onUngroup },
-            { id: 'EXPLODE', icon: <Split size={18} />, title: "Explode Shape", onClick: onExplode },
           ]}
         />
 
@@ -274,11 +298,11 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
           </div>
         </div>
 
-        <Ripple><button onClick={() => fileInputRef.current?.click()} className={btnClass(false)} title="Import SVG">
+        <Ripple><button onClick={() => fileInputRef.current?.click()} className={btnClass(false, 'cyan')} title="Import SVG">
           <Upload size={18} />
           <input type="file" ref={fileInputRef} onChange={onImportSVG} accept=".svg" className="hidden" />
         </button></Ripple>
-        <Ripple><button onClick={onExportSVG} className={btnClass(false)} title="Export SVG">
+        <Ripple><button onClick={onExportSVG} className={btnClass(false, 'cyan')} title="Export SVG">
           <Download size={18} />
         </button></Ripple>
       </div>
@@ -286,7 +310,7 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
       <div className="flex gap-2 items-center">
         <Ripple><button
           onClick={onToggleSidebar}
-          className={btnClass(isSidebarOpen)}
+          className={btnClass(isSidebarOpen, 'indigo')}
           title="Toggle Properties"
         >
           <LayoutTemplate size={18} />
