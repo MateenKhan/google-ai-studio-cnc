@@ -930,6 +930,12 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({
                         </span>
                     </div>
                 )}
+                
+                {/* Drag Selection Hint */}
+                <div className="absolute top-4 left-4 z-40 bg-slate-800/80 text-slate-300 text-xs px-3 py-2 rounded-lg backdrop-blur-sm border border-slate-700 flex items-center gap-2">
+                    <kbd className="px-2 py-1 bg-slate-700 rounded text-xs">Shift</kbd>
+                    <span>+ Mouse Drag to Select Multiple Paths</span>
+                </div>
 
                 {/* SVG Visualization */}
                 <svg
@@ -992,18 +998,17 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({
                                 const svgRect = (document.querySelector('svg') as SVGSVGElement)?.getBoundingClientRect();
                                 if (!svgRect) return null;
                                 
-                                const scaleX = vbSize / svgRect.width;
-                                const scaleY = vbSize / svgRect.height;
+                                const currentScale = vbSize / (svgRect.width * zoom);
                                 
-                                const startX = (dragSelectionStart.x - svgRect.left) * scaleX - vbSize / 2;
-                                const startY = (dragSelectionStart.y - svgRect.top) * scaleY - vbSize / 2;
-                                const endX = (dragSelectionEnd.x - svgRect.left) * scaleX - vbSize / 2;
-                                const endY = (dragSelectionEnd.y - svgRect.top) * scaleY - vbSize / 2;
+                                const adjustedStartX = (dragSelectionStart.x - svgRect.left) * currentScale - vbSize / 2 - pan.x;
+                                const adjustedStartY = (dragSelectionStart.y - svgRect.top) * currentScale - vbSize / 2 - pan.y;
+                                const adjustedEndX = (dragSelectionEnd.x - svgRect.left) * currentScale - vbSize / 2 - pan.x;
+                                const adjustedEndY = (dragSelectionEnd.y - svgRect.top) * currentScale - vbSize / 2 - pan.y;
                                 
-                                const minX = Math.min(startX, endX);
-                                const maxX = Math.max(startX, endX);
-                                const minY = Math.min(startY, endY);
-                                const maxY = Math.max(startY, endY);
+                                const minX = Math.min(adjustedStartX, adjustedEndX);
+                                const maxX = Math.max(adjustedStartX, adjustedEndX);
+                                const minY = Math.min(adjustedStartY, adjustedEndY);
+                                const maxY = Math.max(adjustedStartY, adjustedEndY);
                                 
                                 return (
                                     <rect
