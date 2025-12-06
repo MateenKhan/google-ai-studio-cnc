@@ -1251,6 +1251,19 @@ const Canvas: React.FC<CanvasProps> = ({
                 )}
 
 
+                {/* Rubber Band for Path Tool */}
+                {(activeTool === Tool.PATH || dragMode === 'PATH') && currentPolyline && currentPolyline.points.length > 0 && cursorPos && (
+                    <line
+                        x1={currentPolyline.points[currentPolyline.points.length - 1].x}
+                        y1={currentPolyline.points[currentPolyline.points.length - 1].y}
+                        x2={cursorPos.x}
+                        y2={cursorPos.y}
+                        stroke="#22d3ee"
+                        strokeWidth={1 / zoom}
+                        strokeDasharray={`${5 / zoom} ${5 / zoom}`}
+                        pointerEvents="none"
+                    />
+                )}
             </svg>
 
             {
@@ -1266,19 +1279,7 @@ const Canvas: React.FC<CanvasProps> = ({
                 )
             }
 
-            {/* Rubber Band for Path Tool */}
-            {(activeTool === Tool.PATH || dragMode === 'PATH') && currentPolyline && currentPolyline.points.length > 0 && cursorPos && (
-                <line
-                    x1={currentPolyline.points[currentPolyline.points.length - 1].x}
-                    y1={currentPolyline.points[currentPolyline.points.length - 1].y}
-                    x2={cursorPos.x}
-                    y2={cursorPos.y}
-                    stroke="#22d3ee"
-                    strokeWidth={1 / zoom}
-                    strokeDasharray={`${5 / zoom} ${5 / zoom}`}
-                    pointerEvents="none"
-                />
-            )}
+
 
         </div >
     );
