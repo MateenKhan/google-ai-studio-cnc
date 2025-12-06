@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Play, X, Rotate3d, Square, ZoomIn, ZoomOut, Move, Trash2, Pause, Maximize2, Minimize2, ChevronDown, ChevronRight, Expand, Shrink, Edit3, Check, Bookmark, ArrowUp } from 'lucide-react';
+import { Play, X, Rotate3d, Square, ZoomIn, ZoomOut, Move, Trash2, Pause, Maximize2, Minimize2, ChevronDown, ChevronRight, Expand, Shrink, Edit3, Check, Bookmark, ArrowUp, ArrowDown } from 'lucide-react';
 import { calculateGCodeBounds } from '../utils';
 import { MachineStatus } from '../types';
 import { serialService } from '../services/serialService';
@@ -38,9 +38,12 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null);
     const [cursorLineIndex, setCursorLineIndex] = useState<number | null>(null);
 
+    // Path Points - New state for showing points on selected paths
+    const [pathPoints, setPathPoints] = useState<{ x: number, y: number, z: number, segmentIndex: number, pointType: 'start' | 'end' }[]>([]);
+
     // Shape Editing
     const [isEditingShape, setIsEditingShape] = useState(false);
-    const [editablePoints, setEditablePoints] = useState<{x: number, y: number, z: number, segmentIndex: number, pointIndex: number}[]>([]);
+    const [editablePoints, setEditablePoints] = useState<{ x: number, y: number, z: number, segmentIndex: number, pointIndex: number }[]>([]);
     const [selectedPointIndex, setSelectedPointIndex] = useState<number | null>(null);
     const [isDraggingPoint, setIsDraggingPoint] = useState(false);
     const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
@@ -48,7 +51,13 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
 
     // Point Selection Enhancement
     const [selectedPoints, setSelectedPoints] = useState<number[]>([]); // For multiple point selection
-    const [storedPoints, setStoredPoints] = useState<{x: number, y: number, z: number, segmentIndex: number, pointIndex: number}[]>([]); // Stored points for later use
+    const [storedPoints, setStoredPoints] = useState<{ x: number, y: number, z: number, segmentIndex: number, pointIndex: number }[]>([]); // Stored points for later use
+
+    // Tool Raise/Lower Points for Deletion
+    const [raisePoint, setRaisePoint] = useState<{ x: number, y: number, z: number } | null>(null);
+    const [lowerPoint, setLowerPoint] = useState<{ x: number, y: number, z: number } | null>(null);
+    const [isSettingRaisePoint, setIsSettingRaisePoint] = useState(false);
+    const [isSettingLowerPoint, setIsSettingLowerPoint] = useState(false);
 
     // Fullscreen
     const [isFullscreen, setIsFullscreen] = useState(false);
@@ -288,26 +297,17 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     const vbSize = scaleRef * 1.5;
     const viewBox = `${-vbSize / 2} ${-vbSize / 2} ${vbSize} ${vbSize}`;
 
-    // Interactive Controls
     const handlePointerDown = (e: React.PointerEvent) => {
-        // Allow clicking on SVG elements even in fullscreen mode
-        // Check if the target is a line element (not the SVG container itself)
+        if (isSettingRaisePoint || isSettingLowerPoint) return;
+
         const isLineElement = e.target instanceof SVGElement && e.target.tagName === 'line';
+        if (isFullscreen && isLineElement) return;
 
-        // If clicking on a line element, allow the event to propagate to the line's onClick handler
-        if (isFullscreen && isLineElement) {
-            return;
-        }
-
-        // Allow all interactions in fullscreen mode (pan, rotate, move)
         e.currentTarget.setPointerCapture(e.pointerId);
         isDraggingRef.current = true;
         hasDraggedRef.current = false;
         lastMousePosRef.current = { x: e.clientX, y: e.clientY };
 
-        // Set drag mode based on mouse button:
-        // - Right mouse button (2) or Middle mouse button (1): PAN mode
-        // - Left mouse button (0): ROTATE mode (in 3D view) or PAN mode (in 2D view)
         if (e.button === 2 || e.button === 1) {
             dragModeRef.current = 'PAN';
         } else {
@@ -316,8 +316,8 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     };
 
     const handlePointerMove = (e: React.PointerEvent) => {
-        // Allow all interactions in fullscreen mode (pan, rotate, move)
         if (!isDraggingRef.current) return;
+        e.preventDefault();
         const dx = e.clientX - lastMousePosRef.current.x;
         const dy = e.clientY - lastMousePosRef.current.y;
 
@@ -362,6 +362,33 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
             return;
         }
 
+        // Enter raise point selection mode
+        setIsSettingRaisePoint(true);
+        alert("Please select the point where you want to raise the tool by clicking on a point in the simulation.");
+    };
+
+    // Function to set raise point and proceed to lower point selection
+    const setToolRaisePoint = (point: { x: number, y: number, z: number }) => {
+        setRaisePoint(point);
+        setIsSettingRaisePoint(false);
+        setIsSettingLowerPoint(true);
+        alert("Please select the point where you want to lower the tool by clicking on a point in the simulation.");
+    };
+
+    // Function to set lower point and perform deletion
+    const setToolLowerPoint = (point: { x: number, y: number, z: number }) => {
+        setLowerPoint(point);
+        setIsSettingLowerPoint(false);
+        performDeletionWithToolAdjustment();
+    };
+
+    // Perform the actual deletion with tool raise/lower adjustments
+    const performDeletionWithToolAdjustment = () => {
+        if (!raisePoint || !lowerPoint) {
+            console.log('DEBUG: Missing raise or lower point');
+            return;
+        }
+
         const lines = gcode.split('\n');
         console.log('DEBUG: Total lines before delete:', lines.length);
 
@@ -380,17 +407,41 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
 
         console.log('DEBUG: Lines to delete:', Array.from(linesToDelete));
 
-        // Remove lines in reverse order to maintain indices
+        // Sort lines to delete in descending order to maintain indices
         const sortedIndices = Array.from(linesToDelete).sort((a, b) => b - a);
+
+        // Remove lines in reverse order to maintain indices
         sortedIndices.forEach(idx => {
             if (idx < lines.length) {
                 lines.splice(idx, 1);
             }
         });
 
+        // Find the insertion point (first deleted line index)
+        const firstDeletedIndex = sortedIndices.length > 0 ? Math.min(...sortedIndices) : lines.length;
+
+        // Insert tool raise/lower commands at the appropriate position
+        if (firstDeletedIndex <= lines.length) {
+            // Insert G0 Z5 (raise tool)
+            lines.splice(firstDeletedIndex, 0, 'G0 Z5');
+
+            // Insert G0 Y{raisePoint.y} (move to raise point)
+            lines.splice(firstDeletedIndex + 1, 0, `G0 Y${raisePoint.y.toFixed(3)}`);
+
+            // Insert G0 Y{lowerPoint.y} (move to lower point)
+            lines.splice(firstDeletedIndex + 2, 0, `G0 Y${lowerPoint.y.toFixed(3)}`);
+
+            // Insert G1 Z-2 (lower tool)
+            lines.splice(firstDeletedIndex + 3, 0, 'G1 Z-2');
+        }
+
         onUpdateGCode(lines.join('\n'));
         setSelectedLineIndex(null);
         setSelectedSegmentIndices([]);
+
+        // Clear raise/lower points
+        setRaisePoint(null);
+        setLowerPoint(null);
     };
 
     const handleClearSelection = () => {
@@ -401,6 +452,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
         setSelectedPointIndex(null);
         setSelectedPoints([]);
         setStoredPoints([]);
+        setPathPoints([]); // Clear path points
     };
 
     // Toggle point selection (for multiple selection)
@@ -429,38 +481,90 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
 
     // Insert tool raising at selected points
     const insertToolRaisingAtPoints = () => {
+        console.log('Inserting tool raising at points:', storedPoints);
         if (storedPoints.length === 0) return;
-        
+
         // Convert current G-code to lines
         const lines = gcode.split('\n');
-        
+        console.log('Original lines count:', lines.length);
+
         // Sort stored points by line index to process in order
         const sortedPoints = [...storedPoints].sort((a, b) => {
             const lineA = segments[a.segmentIndex]?.lineIndex || 0;
             const lineB = segments[b.segmentIndex]?.lineIndex || 0;
             return lineA - lineB;
         });
-        
+
         // Keep track of inserted lines to adjust indices
         let insertedLines = 0;
-        
+
         // Process each stored point
         sortedPoints.forEach(point => {
             const segment = segments[point.segmentIndex];
             if (!segment) return;
-            
+
             const lineIndex = segment.lineIndex + insertedLines;
-            
+            console.log(`Inserting G0 Z0 at line index: ${lineIndex}`);
+
             // Insert "G0 Z0" before the line
             if (lineIndex >= 0 && lineIndex <= lines.length) {
                 lines.splice(lineIndex, 0, 'G0 Z0');
                 insertedLines++; // Adjust for the newly inserted line
+                console.log(`Inserted G0 Z0 at line ${lineIndex}`);
             }
         });
-        
+
+        console.log('New lines count:', lines.length);
+        console.log('New G-code:', lines.join('\n'));
+
         // Update the G-code
         onUpdateGCode(lines.join('\n'));
-        
+
+        // Clear stored points after insertion
+        setStoredPoints([]);
+    };
+
+    // Insert tool lowering at selected points
+    const insertToolLoweringAtPoints = () => {
+        console.log('Inserting tool lowering at points:', storedPoints);
+        if (storedPoints.length === 0) return;
+
+        // Convert current G-code to lines
+        const lines = gcode.split('\n');
+        console.log('Original lines count:', lines.length);
+
+        // Sort stored points by line index to process in order
+        const sortedPoints = [...storedPoints].sort((a, b) => {
+            const lineA = segments[a.segmentIndex]?.lineIndex || 0;
+            const lineB = segments[b.segmentIndex]?.lineIndex || 0;
+            return lineA - lineB;
+        });
+
+        // Keep track of inserted lines to adjust indices
+        let insertedLines = 0;
+
+        // Process each stored point
+        sortedPoints.forEach(point => {
+            const segment = segments[point.segmentIndex];
+            if (!segment) return;
+
+            const lineIndex = segment.lineIndex + insertedLines;
+            console.log(`Inserting G0 Z-5 at line index: ${lineIndex}`);
+
+            // Insert "G0 Z-5" before the line (assuming Z=-5 as a typical cutting depth)
+            if (lineIndex >= 0 && lineIndex <= lines.length) {
+                lines.splice(lineIndex, 0, 'G0 Z-5');
+                insertedLines++; // Adjust for the newly inserted line
+                console.log(`Inserted G0 Z-5 at line ${lineIndex}`);
+            }
+        });
+
+        console.log('New lines count:', lines.length);
+        console.log('New G-code:', lines.join('\n'));
+
+        // Update the G-code
+        onUpdateGCode(lines.join('\n'));
+
         // Clear stored points after insertion
         setStoredPoints([]);
     };
@@ -468,19 +572,19 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     // Convert selected shape to editable points
     const handleConvertToEditableShape = () => {
         if (selectedSegmentIndices.length === 0) return;
-        
+
         // Get unique line indices from selected segments
         const lineIndices = Array.from(new Set(selectedSegmentIndices.map(idx => segments[idx].lineIndex)));
-        
+
         // Collect all points from selected segments
-        const points: {x: number, y: number, z: number, segmentIndex: number, pointIndex: number}[] = [];
-        
+        const points: { x: number, y: number, z: number, segmentIndex: number, pointIndex: number }[] = [];
+
         selectedSegmentIndices.forEach(segmentIndex => {
             const segment = segments[segmentIndex];
             // Add start point (avoiding duplicates)
-            if (points.length === 0 || 
-                points[points.length - 1].x !== segment.x1 || 
-                points[points.length - 1].y !== segment.y1 || 
+            if (points.length === 0 ||
+                points[points.length - 1].x !== segment.x1 ||
+                points[points.length - 1].y !== segment.y1 ||
                 points[points.length - 1].z !== segment.z1) {
                 points.push({
                     x: segment.x1,
@@ -490,7 +594,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                     pointIndex: 0
                 });
             }
-            
+
             // Add end point
             points.push({
                 x: segment.x2,
@@ -500,7 +604,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                 pointIndex: 1
             });
         });
-        
+
         setEditablePoints(points);
         setIsEditingShape(true);
     };
@@ -524,20 +628,20 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
     // Apply shape edits to G-code
     const handleApplyShapeEdits = () => {
         if (!isEditingShape || editablePoints.length === 0) return;
-        
+
         // Convert current G-code to lines
         const lines = gcode.split('\n');
-        
+
         // For each editable point, update the corresponding G-code line
         editablePoints.forEach(point => {
             const segment = segments[point.segmentIndex];
             const lineIndex = segment.lineIndex;
-            
+
             if (lineIndex < lines.length) {
                 const line = lines[lineIndex];
                 // Update coordinates in the line
                 let updatedLine = line;
-                
+
                 // Replace X coordinate
                 if (point.pointIndex === 0) {
                     // This is a start point, we need to update the previous line that leads to this point
@@ -547,20 +651,20 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                     // This is an end point, update this line
                     updatedLine = updatedLine.replace(/X[\d\.-]+/, `X${point.x.toFixed(3)}`);
                 }
-                
+
                 // Replace Y coordinate
                 updatedLine = updatedLine.replace(/Y[\d\.-]+/, `Y${point.y.toFixed(3)}`);
-                
+
                 // Replace Z coordinate
                 updatedLine = updatedLine.replace(/Z[\d\.-]+/, `Z${point.z.toFixed(3)}`);
-                
+
                 lines[lineIndex] = updatedLine;
             }
         });
-        
+
         // Update the G-code
         onUpdateGCode(lines.join('\n'));
-        
+
         // Exit editing mode
         setIsEditingShape(false);
         setEditablePoints([]);
@@ -642,6 +746,38 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
         setJobProgress(0);
     };
 
+    // Update path points based on selected segments
+    const updatePathPoints = (segmentIndices: number[]) => {
+        const points: { x: number, y: number, z: number, segmentIndex: number, pointType: 'start' | 'end' }[] = [];
+
+        // Collect all points from selected segments
+        segmentIndices.forEach(segmentIndex => {
+            if (segmentIndex < segments.length) {
+                const segment = segments[segmentIndex];
+
+                // Add start point
+                points.push({
+                    x: segment.x1,
+                    y: segment.y1,
+                    z: segment.z1,
+                    segmentIndex: segmentIndex,
+                    pointType: 'start'
+                });
+
+                // Add end point
+                points.push({
+                    x: segment.x2,
+                    y: segment.y2,
+                    z: segment.z2,
+                    segmentIndex: segmentIndex,
+                    pointType: 'end'
+                });
+            }
+        });
+
+        setPathPoints(points);
+    };
+
     const mProj = project(parseFloat(machineStatus.pos.x), parseFloat(machineStatus.pos.y), parseFloat(machineStatus.pos.z));
 
     const content = (
@@ -670,15 +806,15 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                         if (isDraggingPoint && selectedPointIndex !== null) {
                             const deltaX = (e.clientX - dragStartPos.x) / zoom;
                             const deltaY = (e.clientY - dragStartPos.y) / zoom;
-                            
+
                             // Convert screen delta to world coordinates
                             // This is a simplified approach - in a real implementation you'd need to account for projection
                             const newX = dragStartPoint.x + deltaX;
                             const newY = dragStartPoint.y - deltaY; // Invert Y axis
-                            
+
                             handleUpdatePoint(selectedPointIndex, newX, newY, dragStartPoint.z);
                         }
-                        
+
                         // Handle regular pointer move
                         handlePointerMove(e);
                     }}
@@ -687,14 +823,17 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                         if (isDraggingPoint) {
                             setIsDraggingPoint(false);
                         }
-                        
+
                         // Handle regular pointer up
                         handlePointerUp(e);
                     }}
                     onWheel={handleWheel}
-                    onClick={() => {
-                        if (!hasDraggedRef.current) {
-                            handleClearSelection();
+                    onClick={(e) => {
+                        // Only clear selection if clicking on the SVG background (not on a point or segment)
+                        if (e.target === e.currentTarget) {
+                            if (!hasDraggedRef.current) {
+                                handleClearSelection();
+                            }
                         }
                     }}
                     style={{ transform: `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)` }}
@@ -748,32 +887,42 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                                             const end = Math.max(lastClickedIndex, idx);
                                             const newSelection = Array.from({ length: end - start + 1 }, (_, i) => start + i);
                                             setSelectedSegmentIndices(prev => Array.from(new Set([...prev, ...newSelection])));
+
+                                            // Update path points for the newly selected segments
+                                            updatePathPoints([...selectedSegmentIndices, ...newSelection]);
                                         } else if (e.ctrlKey || e.metaKey) {
                                             // Toggle selection
-                                            setSelectedSegmentIndices(prev =>
-                                                prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]
-                                            );
+                                            const newSelection = selectedSegmentIndices.includes(idx)
+                                                ? selectedSegmentIndices.filter(i => i !== idx)
+                                                : [...selectedSegmentIndices, idx];
+                                            setSelectedSegmentIndices(newSelection);
+
+                                            // Update path points based on current selection
+                                            updatePathPoints(newSelection);
                                         } else {
                                             // Single selection
                                             setSelectedSegmentIndices([idx]);
                                             setSelectedLineIndex(segment.lineIndex);
+
+                                            // Update path points for the newly selected segment
+                                            updatePathPoints([idx]);
                                         }
                                         setLastClickedIndex(idx);
                                     }}
                                 />
                             );
                         })}
-                        
+
                         {/* Editable Points */}
                         {isEditingShape && editablePoints.map((point, idx) => {
                             const projected = project(point.x, point.y, point.z);
                             const isSelected = selectedPointIndex === idx;
                             const isMultiSelected = selectedPoints.includes(idx);
-                            const isStored = storedPoints.some(storedPoint => 
-                                storedPoint.segmentIndex === point.segmentIndex && 
+                            const isStored = storedPoints.some(storedPoint =>
+                                storedPoint.segmentIndex === point.segmentIndex &&
                                 storedPoint.pointIndex === point.pointIndex
                             );
-                            
+
                             return (
                                 <circle
                                     key={idx}
@@ -782,16 +931,56 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                                     r={isSelected ? 6 : isMultiSelected ? 5 : isStored ? 4 : 4}
                                     fill={
                                         isSelected ? "#fbbf24" : // Yellow for single selected
-                                        isMultiSelected ? "#3b82f6" : // Blue for multi-selected
-                                        isStored ? "#10b981" : // Green for stored points
-                                        "#ef4444" // Red for regular editable points
+                                            isMultiSelected ? "#3b82f6" : // Blue for multi-selected
+                                                isStored ? "#10b981" : // Green for stored points
+                                                    isSettingRaisePoint ? "#fbbf24" : // Yellow when setting raise point
+                                                        isSettingLowerPoint ? "#8b5cf6" : // Purple when setting lower point
+                                                            "#ef4444" // Red for regular editable points
                                     }
                                     stroke="#ffffff"
                                     strokeWidth={isSelected || isMultiSelected ? 2 : 1}
                                     className="cursor-pointer"
+                                    onClick={(e) => {
+                                        e.stopPropagation(); // Stop event propagation
+                                        e.preventDefault(); // Prevent default behavior
+
+                                        // Handle special modes (setting raise/lower points during deletion)
+                                        if (isSettingRaisePoint) {
+                                            setToolRaisePoint({ x: point.x, y: point.y, z: point.z });
+                                            return;
+                                        }
+
+                                        if (isSettingLowerPoint) {
+                                            setToolLowerPoint({ x: point.x, y: point.y, z: point.z });
+                                            return;
+                                        }
+
+                                        // Handle point selection for editing
+                                        if (e.ctrlKey || e.metaKey) {
+                                            togglePointSelection(idx);
+                                        } else {
+                                            // Single selection
+                                            setSelectedPointIndex(idx);
+                                            setIsDraggingPoint(true);
+                                            setDragStartPos({ x: e.clientX, y: e.clientY });
+                                            setDragStartPoint({ x: point.x, y: point.y, z: point.z });
+                                        }
+                                    }}
                                     onMouseDown={(e) => {
-                                        e.stopPropagation();
-                                        
+                                        e.stopPropagation(); // Stop event propagation
+                                        e.preventDefault(); // Prevent default behavior
+
+                                        // Handle special modes (setting raise/lower points during deletion)
+                                        if (isSettingRaisePoint) {
+                                            setToolRaisePoint({ x: point.x, y: point.y, z: point.z });
+                                            return;
+                                        }
+
+                                        if (isSettingLowerPoint) {
+                                            setToolLowerPoint({ x: point.x, y: point.y, z: point.z });
+                                            return;
+                                        }
+
                                         // Handle Ctrl/Cmd click for multiple selection
                                         if (e.ctrlKey || e.metaKey) {
                                             togglePointSelection(idx);
@@ -806,6 +995,72 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                                 />
                             );
                         })}
+
+                        {/* Path Points - Visible when segments are selected */}
+                        {pathPoints.map((point, idx) => {
+                            const projected = project(point.x, point.y, point.z);
+                            const isSelected = selectedPoints.includes(idx);
+                            const isStored = storedPoints.some(storedPoint =>
+                                storedPoint.segmentIndex === point.segmentIndex &&
+                                storedPoint.pointIndex === 0 // Assuming point index 0 for path points
+                            );
+
+                            return (
+                                <circle
+                                    key={`path-${idx}`}
+                                    cx={projected.x}
+                                    cy={projected.y}
+                                    r={isSelected ? 5 : isStored ? 4 : 3}
+                                    fill={
+                                        isSelected ? "#3b82f6" : // Blue for selected
+                                            isStored ? "#10b981" : // Green for stored points
+                                                isSettingRaisePoint ? "#fbbf24" : // Yellow when setting raise point
+                                                    isSettingLowerPoint ? "#8b5cf6" : // Purple when setting lower point
+                                                        "#60a5fa" // Light blue for regular path points
+                                    }
+                                    stroke="#ffffff"
+                                    strokeWidth={isSelected ? 2 : 1}
+                                    className="cursor-pointer"
+                                    onClick={(e) => {
+                                        e.stopPropagation(); // Stop event propagation
+                                        e.preventDefault(); // Prevent default behavior
+
+                                        // Handle special modes (setting raise/lower points during deletion)
+                                        if (isSettingRaisePoint) {
+                                            setToolRaisePoint({ x: point.x, y: point.y, z: point.z });
+                                            return;
+                                        }
+
+                                        if (isSettingLowerPoint) {
+                                            setToolLowerPoint({ x: point.x, y: point.y, z: point.z });
+                                            return;
+                                        }
+
+                                        // Handle regular point selection
+                                        if (e.ctrlKey || e.metaKey) {
+                                            // Toggle selection
+                                            if (selectedPoints.includes(idx)) {
+                                                setSelectedPoints(prev => prev.filter(i => i !== idx));
+                                            } else {
+                                                setSelectedPoints(prev => [...prev, idx]);
+                                            }
+                                        } else {
+                                            // Single selection
+                                            setSelectedPoints([idx]);
+                                        }
+
+                                        // Also select the segment this point belongs to
+                                        if (!selectedSegmentIndices.includes(point.segmentIndex)) {
+                                            setSelectedSegmentIndices(prev => [...prev, point.segmentIndex]);
+                                        }
+                                    }}
+                                    onMouseDown={(e) => {
+                                        e.stopPropagation(); // Stop event propagation
+                                        e.preventDefault(); // Prevent default behavior
+                                    }}
+                                />
+                            );
+                        })}
                     </g>
 
                     {/* Simulation Point */}
@@ -815,19 +1070,37 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                 </svg>
 
                 {/* Selection Info Overlay */}
-                {(selectedLineIndex !== null || selectedSegmentIndices.length > 0 || isEditingShape) && (
+                {(selectedLineIndex !== null || selectedSegmentIndices.length > 0 || isEditingShape || isSettingRaisePoint || isSettingLowerPoint) && (
                     <div className="absolute bottom-4 left-4 right-4 bg-slate-800/90 backdrop-blur-sm rounded-lg p-3 border border-slate-700 flex items-center justify-between">
                         <span className="text-xs text-slate-300 pl-2">
-                            {isEditingShape 
-                                ? `${editablePoints.length} Editable Points (${selectedPoints.length} selected, ${storedPoints.length} stored)`
-                                : selectedSegmentIndices.length > 1
-                                    ? `${selectedSegmentIndices.length} Segments Selected`
-                                    : selectedLineIndex !== null
-                                        ? `Line ${selectedLineIndex + 1} Selected`
-                                        : '1 Segment Selected'}
+                            {isSettingRaisePoint
+                                ? "Click on a point to set the tool raise position"
+                                : isSettingLowerPoint
+                                    ? "Click on a point to set the tool lower position"
+                                    : isEditingShape
+                                        ? `${editablePoints.length} Editable Points (${selectedPoints.length} selected, ${storedPoints.length} stored)`
+                                        : selectedSegmentIndices.length > 1
+                                            ? `${selectedSegmentIndices.length} Segments Selected`
+                                            : selectedLineIndex !== null
+                                                ? `Line ${selectedLineIndex + 1} Selected`
+                                                : '1 Segment Selected'}
                         </span>
                         <div className="flex items-center">
-                            {!isEditingShape ? (
+                            {isSettingRaisePoint || isSettingLowerPoint ? (
+                                <Ripple><button
+                                    onClick={() => {
+                                        setIsSettingRaisePoint(false);
+                                        setIsSettingLowerPoint(false);
+                                        setRaisePoint(null);
+                                        setLowerPoint(null);
+                                        alert("Deletion cancelled.");
+                                    }}
+                                    className="p-1 bg-red-600 hover:bg-red-500 rounded-full text-white"
+                                    title="Cancel Deletion"
+                                >
+                                    <X size={14} className="pointer-events-none" />
+                                </button></Ripple>
+                            ) : !isEditingShape ? (
                                 <>
                                     <Ripple><button
                                         onClick={handleConvertToEditableShape}
@@ -861,6 +1134,14 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                                         title="Insert Tool Raising at Stored Points"
                                     >
                                         <ArrowUp size={14} className="pointer-events-none" />
+                                    </button></Ripple>
+                                    <Ripple><button
+                                        onClick={insertToolLoweringAtPoints}
+                                        disabled={storedPoints.length === 0}
+                                        className={`p-1 rounded-full text-white mr-2 ${storedPoints.length > 0 ? 'bg-blue-600 hover:bg-blue-500' : 'bg-slate-600 cursor-not-allowed'}`}
+                                        title="Insert Tool Lowering at Stored Points"
+                                    >
+                                        <ArrowDown size={14} className="pointer-events-none" />
                                     </button></Ripple>
                                     <Ripple><button
                                         onClick={clearStoredPoints}
