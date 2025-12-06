@@ -78,8 +78,6 @@ export const generateGCode = async (shapes: Shape[], settings: MachineSettings):
     };
 
     const processShape = async (shape: Shape, offsetX: number = 0, offsetY: number = 0) => {
-        lines.push(`; Shape: ${shape.type} ID:${shape.id.substring(0, 4)}`);
-
         if (shape.type === ShapeType.GROUP) {
             const g = shape as GroupShape;
             // Recursively process children with cumulative offset
@@ -303,6 +301,7 @@ export const generateGCode = async (shapes: Shape[], settings: MachineSettings):
             }
         }
     };
+
 
     for (const shape of shapes) {
         await processShape(shape);
