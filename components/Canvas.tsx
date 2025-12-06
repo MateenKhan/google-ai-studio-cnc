@@ -247,6 +247,8 @@ const Canvas: React.FC<CanvasProps> = ({
             return;
         }
 
+
+
         if (activeTool === Tool.SELECT) {
             setDragMode('MARQUEE');
             setIsDragging(true);
@@ -343,6 +345,8 @@ const Canvas: React.FC<CanvasProps> = ({
             setMarquee({ x, y, width, height });
         }
 
+
+
         if (dragMode === 'SHAPE' && shapeDragStartRef.current) {
             const point = getSVGPoint(e);
             const dx = point.x - shapeDragStartRef.current.startX;
@@ -401,6 +405,7 @@ const Canvas: React.FC<CanvasProps> = ({
     const handlePointerUp = (e: React.PointerEvent) => {
         if (dragMode === 'MARQUEE' && marquee) {
             const ids = checkIntersection(marquee);
+            // If Shift is held, add to existing selection, otherwise replace
             onMultiSelect(ids, e.shiftKey);
             setMarquee(null);
         }
@@ -843,6 +848,7 @@ const Canvas: React.FC<CanvasProps> = ({
                     return <React.Fragment key={`dim-${shape.id}`}>{renderDimensions(shape)}</React.Fragment>;
                 })}
 
+                {/* Marquee Selection Box */}
                 {marquee && (
                     <rect
                         x={marquee.x}
@@ -852,10 +858,12 @@ const Canvas: React.FC<CanvasProps> = ({
                         fill="rgba(56, 189, 248, 0.1)"
                         stroke="#38bdf8"
                         strokeWidth={1 / zoom}
-                        strokeDasharray="4 2"
+                        strokeDasharray={`${4 / zoom} ${2 / zoom}`}
                         pointerEvents="none"
                     />
                 )}
+
+
             </svg>
 
             {selectedIds.length > 0 && (

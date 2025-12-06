@@ -323,15 +323,6 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({
         const isLineElement = e.target instanceof SVGElement && e.target.tagName === 'line';
         if (isFullscreen && isLineElement) return;
 
-        // Check if we're starting a drag selection (Shift+Left Click OR Select Tool)
-        if (e.button === 0 && (e.shiftKey || activeTool === 'SELECT')) {
-            e.preventDefault();
-            setIsDragSelecting(true);
-            setDragSelectionStart({ x: e.clientX, y: e.clientY });
-            setDragSelectionEnd({ x: e.clientX, y: e.clientY });
-            return;
-        }
-
         e.currentTarget.setPointerCapture(e.pointerId);
         isDraggingRef.current = true;
         hasDraggedRef.current = false;
@@ -909,22 +900,6 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({
                     <Rotate3d size={18} /> Simulator
                 </h2>
                 <div className="flex gap-2">
-                    <div className="flex bg-slate-800 rounded-lg p-1 gap-1 mr-2 border border-slate-700">
-                        <Ripple><button
-                            onClick={() => setActiveTool('PAN')}
-                            className={`p-1 rounded ${activeTool === 'PAN' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
-                            title="Pan Tool (Default)"
-                        >
-                            <Hand size={18} />
-                        </button></Ripple>
-                        <Ripple><button
-                            onClick={() => setActiveTool('SELECT')}
-                            className={`p-1 rounded ${activeTool === 'SELECT' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
-                            title="Select / Marquee Tool"
-                        >
-                            <MousePointer2 size={18} />
-                        </button></Ripple>
-                    </div>
                     {onUndo && <Ripple><button onClick={onUndo} className="text-slate-400 hover:text-white" title="Undo (Ctrl+Z)"><Undo2 size={18} /></button></Ripple>}
                     {onRedo && <Ripple><button onClick={onRedo} className="text-slate-400 hover:text-white" title="Redo (Ctrl+Y)"><Redo2 size={18} /></button></Ripple>}
                     <div className="w-px h-4 bg-slate-700 mx-1 self-center" />
@@ -1261,106 +1236,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({
                 </svg>
 
                 {/* Selection Info Overlay */}
-                {(selectedLineIndex !== null || selectedSegmentIndices.length > 0 || isEditingShape || isSettingRaisePoint || isSettingLowerPoint) && (
-                    <div className="absolute bottom-4 left-4 right-4 bg-slate-800/90 backdrop-blur-sm rounded-lg p-3 border border-slate-700 flex items-center justify-between">
-                        <span className="text-xs text-slate-300 pl-2">
-                            {isSettingRaisePoint
-                                ? "Click on a point to set the tool raise position"
-                                : isSettingLowerPoint
-                                    ? "Click on a point to set the tool lower position"
-                                    : isEditingShape
-                                        ? `${editablePoints.length} Editable Points (${selectedPoints.length} selected, ${storedPoints.length} stored)`
-                                        : selectedSegmentIndices.length > 1
-                                            ? `${selectedSegmentIndices.length} Segments Selected`
-                                            : selectedLineIndex !== null
-                                                ? `Line ${selectedLineIndex + 1} Selected`
-                                                : '1 Segment Selected'}
-                        </span>
-                        <div className="flex items-center">
-                            {isSettingRaisePoint || isSettingLowerPoint ? (
-                                <Ripple><button
-                                    onClick={() => {
-                                        setIsSettingRaisePoint(false);
-                                        setIsSettingLowerPoint(false);
-                                        setRaisePoint(null);
-                                        setLowerPoint(null);
-                                        alert("Deletion cancelled.");
-                                    }}
-                                    className="p-1 bg-red-600 hover:bg-red-500 rounded-full text-white"
-                                    title="Cancel Deletion"
-                                >
-                                    <X size={14} className="pointer-events-none" />
-                                </button></Ripple>
-                            ) : !isEditingShape ? (
-                                <>
-                                    <Ripple><button
-                                        onClick={handleConvertToEditableShape}
-                                        className="p-1 bg-blue-600 hover:bg-blue-500 rounded-full text-white mr-2"
-                                        title="Edit Shape"
-                                    >
-                                        <Edit3 size={14} className="pointer-events-none" />
-                                    </button></Ripple>
-                                    <Ripple><button
-                                        onClick={handleDeleteSegments}
-                                        className="p-1 bg-red-600 hover:bg-red-500 rounded-full text-white"
-                                        title="Delete Segment"
-                                    >
-                                        <Trash2 size={14} className="pointer-events-none" />
-                                    </button></Ripple>
-                                </>
-                            ) : (
-                                <>
-                                    <Ripple><button
-                                        onClick={storeSelectedPoints}
-                                        disabled={selectedPoints.length === 0}
-                                        className={`p-1 rounded-full text-white mr-2 ${selectedPoints.length > 0 ? 'bg-green-600 hover:bg-green-500' : 'bg-slate-600 cursor-not-allowed'}`}
-                                        title="Store Selected Points"
-                                    >
-                                        <Bookmark size={14} className="pointer-events-none" />
-                                    </button></Ripple>
-                                    <Ripple><button
-                                        onClick={insertToolRaisingAtPoints}
-                                        disabled={storedPoints.length === 0}
-                                        className={`p-1 rounded-full text-white mr-2 ${storedPoints.length > 0 ? 'bg-purple-600 hover:bg-purple-500' : 'bg-slate-600 cursor-not-allowed'}`}
-                                        title="Insert Tool Raising at Stored Points"
-                                    >
-                                        <ArrowUp size={14} className="pointer-events-none" />
-                                    </button></Ripple>
-                                    <Ripple><button
-                                        onClick={insertToolLoweringAtPoints}
-                                        disabled={storedPoints.length === 0}
-                                        className={`p-1 rounded-full text-white mr-2 ${storedPoints.length > 0 ? 'bg-blue-600 hover:bg-blue-500' : 'bg-slate-600 cursor-not-allowed'}`}
-                                        title="Insert Tool Lowering at Stored Points"
-                                    >
-                                        <ArrowDown size={14} className="pointer-events-none" />
-                                    </button></Ripple>
-                                    <Ripple><button
-                                        onClick={clearStoredPoints}
-                                        disabled={storedPoints.length === 0}
-                                        className={`p-1 rounded-full text-white mr-2 ${storedPoints.length > 0 ? 'bg-orange-600 hover:bg-orange-500' : 'bg-slate-600 cursor-not-allowed'}`}
-                                        title="Clear Stored Points"
-                                    >
-                                        <Trash2 size={14} className="pointer-events-none" />
-                                    </button></Ripple>
-                                    <Ripple><button
-                                        onClick={handleApplyShapeEdits}
-                                        className="p-1 bg-green-600 hover:bg-green-500 rounded-full text-white mr-2"
-                                        title="Apply Edits"
-                                    >
-                                        <Check size={14} className="pointer-events-none" />
-                                    </button></Ripple>
-                                    <Ripple><button
-                                        onClick={handleClearSelection}
-                                        className="p-1 bg-slate-600 hover:bg-slate-500 rounded-full text-white"
-                                        title="Cancel Editing"
-                                    >
-                                        <X size={14} className="pointer-events-none" />
-                                    </button></Ripple>
-                                </>
-                            )}
-                        </div>
-                    </div>
-                )}
+
             </div>
 
             {/* G-Code Accordion Section */}
