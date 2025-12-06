@@ -44,7 +44,7 @@ const Canvas: React.FC<CanvasProps> = ({
 }) => {
     const svgRef = useRef<SVGSVGElement>(null);
     const [isDragging, setIsDragging] = useState(false);
-    const [dragMode, setDragMode] = useState<'SHAPE' | 'PAN' | 'MARQUEE' | 'DRAW' | 'LINE_CREATE' | null>(null);
+    const [dragMode, setDragMode] = useState<'SHAPE' | 'PAN' | 'MARQUEE' | 'DRAW' | 'LINE_CREATE' | 'LASSO' | null>(null);
 
     // Panning & Zoom State
     const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -88,6 +88,7 @@ const Canvas: React.FC<CanvasProps> = ({
     const [currentLine, setCurrentLine] = useState<LineShape | null>(null);
     const [snapPoint, setSnapPoint] = useState<{ x: number, y: number } | null>(null);
     const [hoveredId, setHoveredId] = useState<string | null>(null);
+    const [lassoPoints, setLassoPoints] = useState<{ x: number, y: number }[]>([]);
 
     const getSVGPoint = (event: React.PointerEvent | React.TouchEvent | React.WheelEvent | MouseEvent) => {
         const svg = svgRef.current;
@@ -247,7 +248,13 @@ const Canvas: React.FC<CanvasProps> = ({
             return;
         }
 
-
+        if (activeTool === Tool.LASSO) {
+            setDragMode('LASSO');
+            setIsDragging(true);
+            const pt = getSVGPoint(e);
+            setLassoPoints([{ x: pt.x, y: pt.y }]);
+            return;
+        }
 
         if (activeTool === Tool.SELECT) {
             setDragMode('MARQUEE');
@@ -345,7 +352,10 @@ const Canvas: React.FC<CanvasProps> = ({
             setMarquee({ x, y, width, height });
         }
 
-
+        if (dragMode === 'LASSO') {
+            const pt = getSVGPoint(e);
+            setLassoPoints(prev => [...prev, { x: pt.x, y: pt.y }]);
+        }
 
         if (dragMode === 'SHAPE' && shapeDragStartRef.current) {
             const point = getSVGPoint(e);
@@ -409,6 +419,13 @@ const Canvas: React.FC<CanvasProps> = ({
             onMultiSelect(ids, e.shiftKey);
             setMarquee(null);
         }
+        if (dragMode === 'LASSO' && lassoPoints.length > 2) {
+            const ids = checkLassoIntersection(lassoPoints);
+            onMultiSelect(ids, e.shiftKey);
+            setLassoPoints([]);
+        } else if (dragMode === 'LASSO') {
+            setLassoPoints([]);
+        }
         if (dragMode === 'DRAW' && currentPolyline) {
             onAddShapeFromPen(currentPolyline);
             setCurrentPolyline(null);
@@ -426,6 +443,75 @@ const Canvas: React.FC<CanvasProps> = ({
         shapeDragStartRef.current = null;
         marqueeStartRef.current = null;
         try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (err) { }
+    };
+
+    const checkLassoIntersection = (points: { x: number, y: number }[]) => {
+        const ids: string[] = [];
+
+        // Ray casting algorithm for point in polygon
+        const isPointInPolygon = (p: { x: number, y: number }, polygon: { x: number, y: number }[]) => {
+            let inside = false;
+            for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+                const xi = polygon[i].x, yi = polygon[i].y;
+                const xj = polygon[j].x, yj = polygon[j].y;
+
+                const intersect = ((yi > p.y) !== (yj > p.y))
+                    && (p.x < (xj - xi) * (p.y - yi) / (yj - yi) + xi);
+                if (intersect) inside = !inside;
+            }
+            return inside;
+        };
+
+        shapes.forEach(shape => {
+            // Check if any key point of the shape is inside the lasso
+            let isInside = false;
+
+            if (shape.type === ShapeType.RECTANGLE) {
+                const s = shape as RectangleShape;
+                // Check corners
+                const corners = [
+                    { x: s.x, y: s.y },
+                    { x: s.x + s.width, y: s.y },
+                    { x: s.x + s.width, y: s.y + s.height },
+                    { x: s.x, y: s.y + s.height }
+                ];
+                isInside = corners.some(c => isPointInPolygon(c, points));
+            } else if (shape.type === ShapeType.CIRCLE) {
+                const s = shape as CircleShape;
+                // Check center and 4 cardinal points
+                const pts = [
+                    { x: s.x, y: s.y },
+                    { x: s.x + s.radius, y: s.y },
+                    { x: s.x - s.radius, y: s.y },
+                    { x: s.x, y: s.y + s.radius },
+                    { x: s.x, y: s.y - s.radius }
+                ];
+                isInside = pts.some(p => isPointInPolygon(p, points));
+            } else if (shape.type === ShapeType.LINE) {
+                const s = shape as LineShape;
+                isInside = isPointInPolygon({ x: s.x, y: s.y }, points) || isPointInPolygon({ x: s.x2, y: s.y2 }, points);
+            } else if (shape.type === ShapeType.POLYLINE) {
+                const s = shape as PolylineShape;
+                // For polyline, check each point. Note: Polyline points are relative to s.x, s.y
+                isInside = s.points.some(p => isPointInPolygon({ x: p.x + s.x, y: p.y + s.y }, points));
+            } else if (shape.type === ShapeType.GROUP) {
+                // For groups, check if any child is inside
+                const g = shape as GroupShape;
+                isInside = g.children.some(child => {
+                    // This is a simplified check, ideally we'd check child's specific points
+                    // For now, just check its origin
+                    return isPointInPolygon({ x: child.x + g.x, y: child.y + g.y }, points);
+                });
+            }
+            else {
+                // Default check center
+                isInside = isPointInPolygon({ x: shape.x, y: shape.y }, points);
+            }
+
+            if (isInside) ids.push(shape.id);
+        });
+
+        return ids;
     };
 
     const checkIntersection = (rect: { x: number, y: number, width: number, height: number }) => {
@@ -857,6 +943,18 @@ const Canvas: React.FC<CanvasProps> = ({
                         height={marquee.height}
                         fill="rgba(56, 189, 248, 0.1)"
                         stroke="#38bdf8"
+                        strokeWidth={1 / zoom}
+                        strokeDasharray={`${4 / zoom} ${2 / zoom}`}
+                        pointerEvents="none"
+                    />
+                )}
+
+                {/* Lasso Selection Path */}
+                {lassoPoints.length > 0 && (
+                    <polyline
+                        points={lassoPoints.map(p => `${p.x},${p.y}`).join(' ')}
+                        fill="rgba(250, 204, 21, 0.1)"
+                        stroke="#facc15"
                         strokeWidth={1 / zoom}
                         strokeDasharray={`${4 / zoom} ${2 / zoom}`}
                         pointerEvents="none"

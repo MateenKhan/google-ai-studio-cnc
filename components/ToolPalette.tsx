@@ -1,6 +1,6 @@
 
 import React, { useRef } from 'react';
-import { Square, Circle, Type, MousePointer2, Hand, Ruler, Heart, Pen, Minus, LayoutTemplate, ChevronDown, Upload, Download, Group, Ungroup, Split, Undo2, Redo2 } from 'lucide-react';
+import { Square, Circle, Type, MousePointer2, Hand, Ruler, Heart, Pen, Minus, LayoutTemplate, ChevronDown, Upload, Download, Group, Ungroup, Split, Undo2, Redo2, LassoSelect } from 'lucide-react';
 import { ShapeType, Tool, Unit } from '../types';
 import Ripple from './Ripple';
 
@@ -69,6 +69,9 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
         </button></Ripple>
         <Ripple><button onClick={() => onSelectTool(Tool.PAN)} className={btnClass(activeTool === Tool.PAN)} title="Pan">
           <Hand size={18} />
+        </button></Ripple>
+        <Ripple><button onClick={() => onSelectTool(Tool.LASSO)} className={btnClass(activeTool === Tool.LASSO)} title="Lasso Select">
+          <LassoSelect size={18} />
         </button></Ripple>
         <Ripple><button onClick={onToggleDimensions} className={btnClass(showDimensions)} title="Dimensions">
           <Ruler size={18} />

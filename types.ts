@@ -14,6 +14,7 @@ export enum Tool {
   PAN = 'PAN',
   PEN = 'PEN',
   LINE_CREATE = 'LINE_CREATE',
+  LASSO = 'LASSO',
 }
 
 export enum Unit {
