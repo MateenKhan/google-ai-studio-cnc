@@ -1,7 +1,7 @@
 
 import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { Shape, ShapeType, RectangleShape, CircleShape, TextShape, Tool, HeartShape, LineShape, PolylineShape, Unit, MirrorMode, GroupShape } from '../types';
-import { Trash2 } from 'lucide-react';
+import { Trash2, MousePointer2, Hand, PenTool, Minus, Lasso, Hexagon, Scissors, Activity, ZoomIn } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { formatUnit } from '../utils';
 
@@ -1169,8 +1169,22 @@ const Canvas: React.FC<CanvasProps> = ({
             ref={containerRef}
             className={`flex-1 bg-slate-900 relative overflow-hidden flex flex-col items-center justify-center min-h-[400px] select-none ${activeTool === Tool.PAN ? 'cursor-grab active:cursor-grabbing' : ''} ${activeTool === Tool.PEN || activeTool === Tool.LINE_CREATE ? 'cursor-crosshair' : ''}`}
         >
-            <div className="absolute top-4 left-4 text-slate-500 text-sm select-none pointer-events-none z-10 bg-slate-900/50 backdrop-blur rounded px-2 border border-slate-700">
-                Canvas: {formatUnit(canvasWidth, unit, 0)} x {formatUnit(canvasHeight, unit, 0)} | Grid: {adaptiveGridSize}mm | Zoom: {(zoom * 100).toFixed(0)}%
+            <div className="absolute top-4 left-4 text-slate-500 text-sm select-none pointer-events-none z-10 bg-slate-900/50 backdrop-blur rounded px-2 border border-slate-700 flex items-center gap-2">
+                {(() => {
+                    const Icon = {
+                        [Tool.SELECT]: MousePointer2,
+                        [Tool.PAN]: Hand,
+                        [Tool.PEN]: PenTool,
+                        [Tool.LINE_CREATE]: Minus,
+                        [Tool.LASSO]: Lasso,
+                        [Tool.POLYGON_SELECT]: Hexagon,
+                        [Tool.FENCE_SELECT]: Scissors,
+                        [Tool.PATH]: Activity,
+                        [Tool.ZOOM]: ZoomIn
+                    }[activeTool] || MousePointer2;
+                    return <Icon size={14} className="text-sky-400" />;
+                })()}
+                <span>Canvas: {formatUnit(canvasWidth, unit, 0)} x {formatUnit(canvasHeight, unit, 0)} | Grid: {adaptiveGridSize}mm | Zoom: {(zoom * 100).toFixed(0)}%</span>
             </div>
 
             <svg
