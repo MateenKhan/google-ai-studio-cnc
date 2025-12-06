@@ -569,7 +569,6 @@ const App: React.FC = () => {
                     onDelete={handleDeleteShapes}
                     onClose={() => setIsRightPanelOpen(false)}
                     unit={unit}
-                    onOpenCalibration={() => setShowCalibration(true)}
                     canvasWidth={canvasSize.width}
                     canvasHeight={canvasSize.height}
                     onUpdateCanvasSize={handleUpdateCanvasSize}
@@ -614,6 +613,7 @@ const App: React.FC = () => {
                   settings={grblSettings}
                   onClose={() => setIsRightPanelOpen(false)}
                   onRefresh={() => serialService.send('$$')}
+                  onOpenCalibration={() => setShowCalibration(true)}
                 />
               )}
 
