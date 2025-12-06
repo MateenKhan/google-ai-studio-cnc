@@ -15,7 +15,7 @@ import { Shape, ShapeType, MachineSettings, Tool, Unit, RectangleShape, CircleSh
 import { generateGCode, loadFont } from './services/gcodeService';
 // import { explainGCode } from './services/geminiService';
 import { parseSvgToShapes, shapesToSvg, calculateGCodeBounds } from './utils';
-import { Layers, FileCode, Settings, Terminal, Cpu, Play } from 'lucide-react';
+import { Layers, FileCode, Settings, Terminal, Cpu, Play, GripVertical } from 'lucide-react';
 import { serialService } from './services/serialService';
 
 const DEFAULT_SETTINGS: MachineSettings = {
@@ -209,7 +209,8 @@ const App: React.FC = () => {
 
     const handleMouseMove = (moveEvent: PointerEvent) => {
       const deltaX = startX - moveEvent.clientX;
-      const newWidth = Math.min(Math.max(startWidth + deltaX, MIN_PANEL_WIDTH), MAX_PANEL_WIDTH);
+      const maxWidth = window.innerWidth * 0.7;
+      const newWidth = Math.min(Math.max(startWidth + deltaX, MIN_PANEL_WIDTH), maxWidth);
       setRightPanelWidth(newWidth);
     };
 
@@ -669,15 +670,24 @@ const App: React.FC = () => {
 
         {isRightPanelOpen && (
           <div
-            className="fixed inset-y-0 right-0 z-40 bg-slate-800 border-l border-slate-700 shadow-2xl transition-all duration-75 flex flex-col md:static h-[calc(100%-3.5rem)] md:h-full bottom-14 md:bottom-0 w-full md:w-[var(--panel-width)]"
+            className="fixed inset-y-0 right-0 z-40 bg-slate-800 border-l border-slate-700 shadow-2xl transition-all duration-75 flex flex-col md:relative h-[calc(100%-3.5rem)] md:h-full bottom-14 md:bottom-0 w-full md:w-[var(--panel-width)]"
             style={{ '--panel-width': `${rightPanelWidth}px` } as React.CSSProperties}
           >
             <div
-              className="absolute left-0 top-0 bottom-0 w-4 -ml-2 cursor-col-resize hover:bg-sky-500/10 transition-all z-50 flex items-center justify-center touch-none"
+              className="absolute left-0 top-0 bottom-0 w-4 -ml-2 cursor-col-resize group z-[100] flex items-center justify-center touch-none"
               onPointerDown={startResizing}
               title="Drag to resize"
             >
-              <div className="w-1 h-full bg-slate-600 hover:bg-sky-500 transition-colors" />
+              {/* Invisible Hit Area */}
+              <div className="absolute inset-y-0 w-4 bg-transparent" />
+
+              {/* Visible Line - Always semi-visible, bright on hover */}
+              <div className="w-0.5 h-full bg-slate-600 group-hover:bg-sky-400 transition-colors" />
+
+              {/* Explicit Handle Icon - Always visible, high contrast */}
+              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-slate-700 border border-slate-500 rounded-full py-2 px-0.5 shadow-xl group-hover:border-sky-400 group-hover:bg-slate-600 group-hover:text-sky-400 text-slate-300 transition-all">
+                <GripVertical size={16} />
+              </div>
             </div>
 
             <div className="flex border-b border-slate-700 bg-slate-900 shrink-0 overflow-x-auto no-scrollbar">
