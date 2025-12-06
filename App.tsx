@@ -37,6 +37,10 @@ const App: React.FC = () => {
   const [historyPast, setHistoryPast] = useState<Shape[][]>([]);
   const [historyFuture, setHistoryFuture] = useState<Shape[][]>([]);
 
+  // G-Code History State
+  const [gcodeHistoryPast, setGcodeHistoryPast] = useState<string[]>([]);
+  const [gcodeHistoryFuture, setGcodeHistoryFuture] = useState<string[]>([]);
+
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [activeTool, setActiveTool] = useState<Tool>(Tool.SELECT);
   const [gcode, setGcode] = useState<string>('');
@@ -108,25 +112,50 @@ const App: React.FC = () => {
     setHistoryFuture([]); // Clear future on new action
   }, [shapes]);
 
-  const undo = useCallback(() => {
-    if (historyPast.length === 0) return;
-    const previous = historyPast[historyPast.length - 1];
-    const newPast = historyPast.slice(0, -1);
+  const saveGCodeToHistory = useCallback(() => {
+    setGcodeHistoryPast(prev => [...prev, gcode]);
+    setGcodeHistoryFuture([]);
+  }, [gcode]);
 
-    setHistoryFuture(prev => [shapes, ...prev]);
-    setHistoryPast(newPast);
-    setShapes(previous);
-  }, [historyPast, shapes]);
+  const undo = useCallback(() => {
+    if (activeTab === 'simulator') {
+      if (gcodeHistoryPast.length === 0) return;
+      const previous = gcodeHistoryPast[gcodeHistoryPast.length - 1];
+      const newPast = gcodeHistoryPast.slice(0, -1);
+
+      setGcodeHistoryFuture(prev => [gcode, ...prev]);
+      setGcodeHistoryPast(newPast);
+      setGcode(previous);
+    } else {
+      if (historyPast.length === 0) return;
+      const previous = historyPast[historyPast.length - 1];
+      const newPast = historyPast.slice(0, -1);
+
+      setHistoryFuture(prev => [shapes, ...prev]);
+      setHistoryPast(newPast);
+      setShapes(previous);
+    }
+  }, [activeTab, gcodeHistoryPast, gcode, historyPast, shapes]);
 
   const redo = useCallback(() => {
-    if (historyFuture.length === 0) return;
-    const next = historyFuture[0];
-    const newFuture = historyFuture.slice(1);
+    if (activeTab === 'simulator') {
+      if (gcodeHistoryFuture.length === 0) return;
+      const next = gcodeHistoryFuture[0];
+      const newFuture = gcodeHistoryFuture.slice(1);
 
-    setHistoryPast(prev => [...prev, shapes]);
-    setHistoryFuture(newFuture);
-    setShapes(next);
-  }, [historyFuture, shapes]);
+      setGcodeHistoryPast(prev => [...prev, gcode]);
+      setGcodeHistoryFuture(newFuture);
+      setGcode(next);
+    } else {
+      if (historyFuture.length === 0) return;
+      const next = historyFuture[0];
+      const newFuture = historyFuture.slice(1);
+
+      setHistoryPast(prev => [...prev, shapes]);
+      setHistoryFuture(newFuture);
+      setShapes(next);
+    }
+  }, [activeTab, gcodeHistoryFuture, gcode, historyFuture, shapes]);
 
   // Keyboard Shortcuts
   useEffect(() => {
@@ -319,6 +348,63 @@ const App: React.FC = () => {
     setSelectedIds(children.map(c => c.id));
   };
 
+  const handleExplode = () => {
+    if (selectedIds.length === 0) return;
+    saveToHistory();
+
+    let newShapes: Shape[] = [];
+    const idsToDelete: string[] = [];
+    const newSelectedIds: string[] = [];
+
+    shapes.forEach(shape => {
+      if (selectedIds.includes(shape.id)) {
+        if (shape.type === ShapeType.RECTANGLE) {
+          idsToDelete.push(shape.id);
+          const rect = shape as any; // Cast to access properties
+          const { x, y, width, height } = rect;
+
+          // Create 4 lines
+          const lines: Shape[] = [
+            { id: uuidv4(), type: ShapeType.LINE, x: x, y: y, x2: x + width, y2: y }, // Top
+            { id: uuidv4(), type: ShapeType.LINE, x: x + width, y: y, x2: x + width, y2: y + height }, // Right
+            { id: uuidv4(), type: ShapeType.LINE, x: x + width, y: y + height, x2: x, y2: y + height }, // Bottom
+            { id: uuidv4(), type: ShapeType.LINE, x: x, y: y + height, x2: x, y2: y } // Left
+          ];
+          newShapes.push(...lines);
+          newSelectedIds.push(...lines.map(l => l.id));
+
+        } else if (shape.type === ShapeType.POLYLINE) {
+          idsToDelete.push(shape.id);
+          const poly = shape as any;
+          const points = poly.points;
+
+          for (let i = 0; i < points.length - 1; i++) {
+            const p1 = points[i];
+            const p2 = points[i + 1];
+            const line: Shape = {
+              id: uuidv4(),
+              type: ShapeType.LINE,
+              x: p1.x,
+              y: p1.y,
+              x2: p2.x,
+              y2: p2.y
+            };
+            newShapes.push(line);
+            newSelectedIds.push(line.id);
+          }
+        } else {
+          // Keep other shapes as is
+          newShapes.push(shape);
+        }
+      } else {
+        newShapes.push(shape);
+      }
+    });
+
+    setShapes(newShapes);
+    setSelectedIds(newSelectedIds);
+  };
+
   const handleToggleGroup = (groupId: string) => {
     setShapes(prev => prev.map(s => {
       if (s.id === groupId && s.type === ShapeType.GROUP) {
@@ -331,7 +417,11 @@ const App: React.FC = () => {
     }));
   };
 
-  const handleCodeChange = (newCode: string) => { setGcode(newCode); setIsManualMode(true); };
+  const handleCodeChange = (newCode: string) => {
+    saveGCodeToHistory();
+    setGcode(newCode);
+    setIsManualMode(true);
+  };
   // const handleExplain = async () => { if (gcode) alert(await explainGCode(gcode)); };
 
   const handleExportSVG = () => {
@@ -440,6 +530,7 @@ const App: React.FC = () => {
             onImportSVG={handleImportSVG}
             onGroup={handleGroup}
             onUngroup={handleUngroup}
+            onExplode={handleExplode}
           />
         </div>
 
@@ -496,6 +587,8 @@ const App: React.FC = () => {
                   onRegenerate={() => setIsManualMode(false)}
                   generateOnlySelected={generateOnlySelected}
                   onToggleGenerateOnlySelected={() => setGenerateOnlySelected(!generateOnlySelected)}
+                  onUndo={undo}
+                  onRedo={redo}
                 />
               )}
 

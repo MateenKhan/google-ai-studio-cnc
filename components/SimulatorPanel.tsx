@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Play, X, Rotate3d, Square, ZoomIn, ZoomOut, Move, Trash2, Pause, Maximize2, Minimize2, ChevronDown, ChevronRight, Expand, Shrink, Edit3, Check, Bookmark, ArrowUp, ArrowDown } from 'lucide-react';
+import { Play, X, Rotate3d, Square, ZoomIn, ZoomOut, Move, Trash2, Pause, Maximize2, Minimize2, ChevronDown, ChevronRight, Expand, Shrink, Edit3, Check, Bookmark, ArrowUp, ArrowDown, Undo2, Redo2 } from 'lucide-react';
 import { calculateGCodeBounds } from '../utils';
 import { MachineStatus } from '../types';
 import { serialService } from '../services/serialService';
@@ -18,9 +18,23 @@ interface SimulatorPanelProps {
     onRegenerate?: () => void;
     generateOnlySelected?: boolean;
     onToggleGenerateOnlySelected?: () => void;
+    onUndo?: () => void;
+    onRedo?: () => void;
 }
 
-const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, onClose, machineStatus, isConnected, isManualMode, onRegenerate, generateOnlySelected, onToggleGenerateOnlySelected }) => {
+const SimulatorPanel: React.FC<SimulatorPanelProps> = ({
+    gcode,
+    onUpdateGCode,
+    onClose,
+    machineStatus,
+    isConnected,
+    isManualMode,
+    onRegenerate,
+    generateOnlySelected,
+    onToggleGenerateOnlySelected,
+    onUndo,
+    onRedo
+}) => {
     const [viewMode, setViewMode] = useState<'3D' | '2D'>('3D');
     const [isTopView, setIsTopView] = useState(false);
     const [zoom, setZoom] = useState(1);
@@ -364,7 +378,6 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
 
         // Enter raise point selection mode
         setIsSettingRaisePoint(true);
-        alert("Please select the point where you want to raise the tool by clicking on a point in the simulation.");
     };
 
     // Function to set raise point and proceed to lower point selection
@@ -372,7 +385,6 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
         setRaisePoint(point);
         setIsSettingRaisePoint(false);
         setIsSettingLowerPoint(true);
-        alert("Please select the point where you want to lower the tool by clicking on a point in the simulation.");
     };
 
     // Function to set lower point and perform deletion
@@ -788,6 +800,9 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
                     <Rotate3d size={18} /> Simulator
                 </h2>
                 <div className="flex gap-2">
+                    {onUndo && <Ripple><button onClick={onUndo} className="text-slate-400 hover:text-white" title="Undo (Ctrl+Z)"><Undo2 size={18} /></button></Ripple>}
+                    {onRedo && <Ripple><button onClick={onRedo} className="text-slate-400 hover:text-white" title="Redo (Ctrl+Y)"><Redo2 size={18} /></button></Ripple>}
+                    <div className="w-px h-4 bg-slate-700 mx-1 self-center" />
                     <Ripple><button onClick={toggleTopView} className={`p-1 ${isTopView ? 'text-sky-400 bg-sky-900/30' : 'text-slate-400 hover:text-white'}`} title="Toggle Top View">2D</button></Ripple>
                     <Ripple><button onClick={toggleFullscreen} className="text-slate-400 hover:text-white">{isFullscreen ? <Shrink size={18} /> : <Expand size={18} />}</button></Ripple>
                     <Ripple><button onClick={onClose} className="text-slate-400 hover:text-white"><X size={18} /></button></Ripple>
@@ -796,6 +811,18 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({ gcode, onUpdateGCode, o
 
             {/* Main Content */}
             <div className="flex-1 overflow-hidden relative">
+                {/* Notification Overlay */}
+                {(isSettingRaisePoint || isSettingLowerPoint) && (
+                    <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 bg-blue-600 text-white px-6 py-3 rounded-full shadow-lg flex items-center gap-3 animate-in fade-in slide-in-from-top-4">
+                        <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                        <span className="font-medium">
+                            {isSettingRaisePoint
+                                ? "Select point to RAISE tool"
+                                : "Select point to LOWER tool"}
+                        </span>
+                    </div>
+                )}
+
                 {/* SVG Visualization */}
                 <svg
                     viewBox={viewBox}
