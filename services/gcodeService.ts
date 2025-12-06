@@ -49,6 +49,34 @@ export const generateGCode = async (shapes: Shape[], settings: MachineSettings):
     lines.push('M3 S1000');
     lines.push('');
 
+    // Track current tool position
+    let currentX = 0;
+    let currentY = 0;
+    let currentZ = safeHeight;
+
+    const smartMoveToStart = (x: number, y: number) => {
+        const dist = Math.hypot(x - currentX, y - currentY);
+        // If we are very close to the start point and already at cut depth, just continue
+        if (dist < 0.01 && Math.abs(currentZ - (-cutDepth)) < 0.01) {
+            return;
+        }
+
+        // If we are not at safe height and need to move to a new start, retract first
+        if (currentZ < safeHeight) {
+            lines.push(`G0 Z${safeHeight}`);
+            currentZ = safeHeight;
+        }
+
+        // Move to X,Y
+        lines.push(`G0 X${x.toFixed(3)} Y${y.toFixed(3)}`);
+        currentX = x;
+        currentY = y;
+
+        // Plunge
+        lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
+        currentZ = -cutDepth;
+    };
+
     const processShape = async (shape: Shape, offsetX: number = 0, offsetY: number = 0) => {
         lines.push(`; Shape: ${shape.type} ID:${shape.id.substring(0, 4)}`);
 
@@ -72,9 +100,16 @@ export const generateGCode = async (shapes: Shape[], settings: MachineSettings):
                 const h = r.height;
                 const cr = r.cornerRadius || 0;
 
+                let startX = x;
+                let startY = y;
                 if (cr > 0) {
-                    lines.push(`G0 X${(x + cr).toFixed(3)} Y${y.toFixed(3)}`);
-                    lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
+                    startX = x + cr;
+                    startY = y;
+                }
+
+                smartMoveToStart(startX, startY);
+
+                if (cr > 0) {
                     lines.push(`G1 X${(x + w - cr).toFixed(3)} Y${y.toFixed(3)} F${feedRate}`);
                     lines.push(`G2 X${(x + w).toFixed(3)} Y${(y + cr).toFixed(3)} I0 J${cr.toFixed(3)}`);
                     lines.push(`G1 X${(x + w).toFixed(3)} Y${(y + h - cr).toFixed(3)}`);
@@ -84,47 +119,63 @@ export const generateGCode = async (shapes: Shape[], settings: MachineSettings):
                     lines.push(`G1 X${x.toFixed(3)} Y${(y + cr).toFixed(3)}`);
                     lines.push(`G2 X${(x + cr).toFixed(3)} Y${y.toFixed(3)} I${cr.toFixed(3)} J0`);
                 } else {
-                    lines.push(`G0 X${x.toFixed(3)} Y${y.toFixed(3)}`);
-                    lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
                     lines.push(`G1 X${(x + w).toFixed(3)} Y${y.toFixed(3)} F${feedRate}`);
                     lines.push(`G1 X${(x + w).toFixed(3)} Y${(y + h).toFixed(3)}`);
                     lines.push(`G1 X${x.toFixed(3)} Y${(y + h).toFixed(3)}`);
                     lines.push(`G1 X${x.toFixed(3)} Y${y.toFixed(3)}`);
                 }
-                lines.push(`G0 Z${safeHeight}`);
+
+                // Update current position to end point (which is same as start for closed loop)
+                currentX = startX;
+                currentY = startY;
                 break;
             }
 
             case ShapeType.CIRCLE: {
                 const c = shape as CircleShape;
-                lines.push(`G0 X${(x + c.radius).toFixed(3)} Y${y.toFixed(3)}`);
-                lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
+                const startX = x + c.radius;
+                const startY = y;
+
+                smartMoveToStart(startX, startY);
+
                 lines.push(`G2 X${(x + c.radius).toFixed(3)} Y${y.toFixed(3)} I-${c.radius.toFixed(3)} J0 F${feedRate}`);
-                lines.push(`G0 Z${safeHeight}`);
+
+                currentX = startX;
+                currentY = startY;
                 break;
             }
 
             case ShapeType.LINE: {
                 const l = shape as LineShape;
-                lines.push(`G0 X${x.toFixed(3)} Y${y.toFixed(3)}`);
-                lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
-                lines.push(`G1 X${(l.x2 + offsetX).toFixed(3)} Y${(l.y2 + offsetY).toFixed(3)} F${feedRate}`);
-                lines.push(`G0 Z${safeHeight}`);
+                smartMoveToStart(x, y);
+
+                const endX = l.x2 + offsetX;
+                const endY = l.y2 + offsetY;
+
+                lines.push(`G1 X${endX.toFixed(3)} Y${endY.toFixed(3)} F${feedRate}`);
+
+                currentX = endX;
+                currentY = endY;
                 break;
             }
 
             case ShapeType.POLYLINE: {
                 const p = shape as PolylineShape;
                 if (p.points.length > 0) {
-                    // Points are relative to shape X/Y (which are typically 0 for polyline, but we support offset)
                     const first = p.points[0];
-                    lines.push(`G0 X${(first.x + x).toFixed(3)} Y${(first.y + y).toFixed(3)}`);
-                    lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
+                    const startX = first.x + x;
+                    const startY = first.y + y;
+
+                    smartMoveToStart(startX, startY);
+
                     for (let i = 1; i < p.points.length; i++) {
                         const pt = p.points[i];
-                        lines.push(`G1 X${(pt.x + x).toFixed(3)} Y${(pt.y + y).toFixed(3)} F${feedRate}`);
+                        const nextX = pt.x + x;
+                        const nextY = pt.y + y;
+                        lines.push(`G1 X${nextX.toFixed(3)} Y${nextY.toFixed(3)} F${feedRate}`);
+                        currentX = nextX;
+                        currentY = nextY;
                     }
-                    lines.push(`G0 Z${safeHeight}`);
                 }
                 break;
             }
@@ -133,14 +184,16 @@ export const generateGCode = async (shapes: Shape[], settings: MachineSettings):
                 const h = shape as HeartShape;
                 const steps = 40;
                 const firstPt = calculateHeartPoint(0, h, x, y);
-                lines.push(`G0 X${firstPt.x.toFixed(3)} Y${firstPt.y.toFixed(3)}`);
-                lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
+
+                smartMoveToStart(firstPt.x, firstPt.y);
+
                 for (let i = 1; i <= steps; i++) {
                     const t = (i / steps) * 2 * Math.PI;
                     const pt = calculateHeartPoint(t, h, x, y);
                     lines.push(`G1 X${pt.x.toFixed(3)} Y${pt.y.toFixed(3)} F${feedRate}`);
+                    currentX = pt.x;
+                    currentY = pt.y;
                 }
-                lines.push(`G0 Z${safeHeight}`);
                 break;
             }
 
@@ -168,17 +221,17 @@ export const generateGCode = async (shapes: Shape[], settings: MachineSettings):
                         for (const cmd of path.commands) {
                             const mx = (val: number) => centerX - (val - centerX);
                             if (cmd.type === 'M') {
-                                lines.push(`G0 Z${safeHeight}`);
-                                lines.push(`G0 X${mx(cmd.x).toFixed(3)} Y${cmd.y.toFixed(3)}`);
-                                lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
+                                smartMoveToStart(mx(cmd.x), cmd.y);
                                 lastX = cmd.x; lastY = cmd.y; startX = cmd.x; startY = cmd.y;
                             } else if (cmd.type === 'L') {
                                 lines.push(`G1 X${mx(cmd.x).toFixed(3)} Y${cmd.y.toFixed(3)} F${feedRate}`);
                                 lastX = cmd.x; lastY = cmd.y;
+                                currentX = mx(cmd.x); currentY = cmd.y;
                             }
                             else if (cmd.type === 'Z') {
                                 lines.push(`G1 X${mx(startX).toFixed(3)} Y${startY.toFixed(3)} F${feedRate}`);
                                 lastX = startX; lastY = startY;
+                                currentX = mx(startX); currentY = startY;
                             } else if (cmd.type === 'Q' || cmd.type === 'C') {
                                 const steps = 5;
                                 for (let i = 1; i <= steps; i++) {
@@ -193,7 +246,9 @@ export const generateGCode = async (shapes: Shape[], settings: MachineSettings):
                                         // @ts-ignore
                                         py = Math.pow(1 - t, 3) * lastY + 3 * Math.pow(1 - t, 2) * t * cmd.y1 + 3 * (1 - t) * Math.pow(t, 2) * cmd.y2 + Math.pow(t, 3) * cmd.y;
                                     }
-                                    lines.push(`G1 X${mx(px).toFixed(3)} Y${py.toFixed(3)} F${feedRate}`);
+                                    const mxPx = mx(px);
+                                    lines.push(`G1 X${mxPx.toFixed(3)} Y${py.toFixed(3)} F${feedRate}`);
+                                    currentX = mxPx; currentY = py;
                                 }
                                 lastX = cmd.x; lastY = cmd.y;
                             }
@@ -212,16 +267,16 @@ export const generateGCode = async (shapes: Shape[], settings: MachineSettings):
                         };
                         // Standard processing
                         if (cmd.type === 'M') {
-                            lines.push(`G0 Z${safeHeight}`);
-                            lines.push(`G0 X${mx(cmd.x).toFixed(3)} Y${cmd.y.toFixed(3)}`);
-                            lines.push(`G1 Z${-cutDepth} F${feedRate / 2}`);
+                            smartMoveToStart(mx(cmd.x), cmd.y);
                             lastX = cmd.x; lastY = cmd.y; startX = cmd.x; startY = cmd.y;
                         } else if (cmd.type === 'L') {
                             lines.push(`G1 X${mx(cmd.x).toFixed(3)} Y${cmd.y.toFixed(3)} F${feedRate}`);
                             lastX = cmd.x; lastY = cmd.y;
+                            currentX = mx(cmd.x); currentY = cmd.y;
                         } else if (cmd.type === 'Z') {
                             lines.push(`G1 X${mx(startX).toFixed(3)} Y${startY.toFixed(3)} F${feedRate}`);
                             lastX = startX; lastY = startY;
+                            currentX = mx(startX); currentY = startY;
                         } else if (cmd.type === 'Q' || cmd.type === 'C') {
                             const steps = 5;
                             for (let i = 1; i <= steps; i++) {
@@ -236,7 +291,9 @@ export const generateGCode = async (shapes: Shape[], settings: MachineSettings):
                                     // @ts-ignore
                                     py = Math.pow(1 - t, 3) * lastY + 3 * Math.pow(1 - t, 2) * t * cmd.y1 + 3 * (1 - t) * Math.pow(t, 2) * cmd.y2 + Math.pow(t, 3) * cmd.y;
                                 }
-                                lines.push(`G1 X${mx(px).toFixed(3)} Y${py.toFixed(3)} F${feedRate}`);
+                                const mxPx = mx(px);
+                                lines.push(`G1 X${mxPx.toFixed(3)} Y${py.toFixed(3)} F${feedRate}`);
+                                currentX = mxPx; currentY = py;
                             }
                             lastX = cmd.x; lastY = cmd.y;
                         }
@@ -249,6 +306,11 @@ export const generateGCode = async (shapes: Shape[], settings: MachineSettings):
 
     for (const shape of shapes) {
         await processShape(shape);
+    }
+
+    // Final Retract
+    if (currentZ < safeHeight) {
+        lines.push(`G0 Z${safeHeight}`);
     }
 
     lines.push('');
