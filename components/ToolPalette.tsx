@@ -1,7 +1,7 @@
 
 import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Square, Circle, Type, MousePointer2, Hand, Ruler, Heart, Pen, Minus, LayoutTemplate, ChevronDown, Upload, Download, Group, Ungroup, Split, Undo2, Redo2, LassoSelect, Hexagon } from 'lucide-react';
+import { Square, Circle, Type, MousePointer2, Hand, Ruler, Heart, Pen, Minus, LayoutTemplate, ChevronDown, Upload, Download, Group, Ungroup, Split, Undo2, Redo2, LassoSelect, Hexagon, Spline } from 'lucide-react';
 import { ShapeType, Tool, Unit } from '../types';
 import Ripple from './Ripple';
 
@@ -54,20 +54,74 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const [groupCoords, setGroupCoords] = useState<{ left: number, bottom: number } | null>(null);
 
-  const ToolGroup = ({ tools, currentTool, onSelect }: { tools: { tool: Tool, icon: React.ReactNode, title: string }[], currentTool: Tool, onSelect: (t: Tool) => void }) => {
-    const active = tools.find(t => t.tool === currentTool);
-    const mainTool = active || tools[0];
-    const isOpen = openGroup === mainTool.title;
+  // Generic Dropdown Group Component
+  const DropdownGroup = <T extends string>({
+    items,
+    activeId,
+    defaultIcon,
+    onSelect,
+    groupTitle,
+    color = "sky"
+  }: {
+    items: { id: T, icon: React.ReactNode, title: string, onClick?: () => void }[],
+    activeId?: T,
+    defaultIcon?: React.ReactNode,
+    onSelect?: (id: T) => void,
+    groupTitle: string,
+    color?: "sky" | "emerald" | "amber" | "violet"
+  }) => {
+
+    // Determine active item or default to first
+    const activeItem = items.find(i => i.id === activeId);
+    const mainItem = activeItem || items[0];
+    const isOpen = openGroup === groupTitle;
+
+    const baseColorClass = (isActive: boolean) => {
+      if (!isActive) return 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200';
+      switch (color) {
+        case 'emerald': return 'bg-emerald-600 text-white shadow shadow-emerald-900/40';
+        case 'amber': return 'bg-amber-600 text-white shadow shadow-amber-900/40';
+        case 'violet': return 'bg-violet-600 text-white shadow shadow-violet-900/40';
+        case 'sky': default: return 'bg-sky-600 text-white shadow shadow-sky-900/40';
+      }
+    }
+
+    const dropdownItemClass = (isActive: boolean) => {
+      const base = "p-2 rounded-md hover:bg-slate-700 transition-colors flex items-center justify-center";
+      if (!isActive) return `${base} text-slate-400`;
+      switch (color) {
+        case 'emerald': return `${base} bg-emerald-500/20 text-emerald-400`;
+        case 'amber': return `${base} bg-amber-500/20 text-amber-400`;
+        case 'violet': return `${base} bg-violet-500/20 text-violet-400`;
+        case 'sky': default: return `${base} bg-sky-500/20 text-sky-400`;
+      }
+    }
+
+    const chevronClass = (isActive: boolean) => {
+      const base = "p-0.5 h-9 flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-slate-400 border border-l-0 border-slate-700 rounded-r-md transition-colors";
+      if (!isActive) return base;
+      switch (color) {
+        case 'emerald': return `${base} bg-emerald-600/20 text-emerald-400 border-emerald-500/30`;
+        case 'amber': return `${base} bg-amber-600/20 text-amber-400 border-amber-500/30`;
+        case 'violet': return `${base} bg-violet-600/20 text-violet-400 border-violet-500/30`;
+        case 'sky': default: return `${base} bg-sky-600/20 text-sky-400 border-sky-500/30`;
+      }
+    }
+
+    const handleMainClick = () => {
+      if (mainItem.onClick) mainItem.onClick();
+      else if (onSelect) onSelect(mainItem.id);
+    };
 
     return (
       <div className="relative flex items-center">
         <Ripple>
           <button
-            onClick={() => onSelect(mainTool.tool)}
-            className={`${btnClass(!!active)} rounded-r-none border-r border-slate-700/50`}
-            title={mainTool.title}
+            onClick={handleMainClick}
+            className={`p-2 rounded-lg transition-all flex items-center justify-center border border-slate-700 shrink-0 rounded-r-none border-r border-slate-700/50 ${baseColorClass(!!activeItem || (!activeId && items.length > 0))}`}
+            title={mainItem.title}
           >
-            {mainTool.icon}
+            {mainItem.icon}
           </button>
         </Ripple>
         <button
@@ -81,10 +135,10 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
                 left: rect.left,
                 bottom: window.innerHeight - rect.top + 4
               });
-              setOpenGroup(mainTool.title);
+              setOpenGroup(groupTitle);
             }
           }}
-          className={`p-0.5 h-9 flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-slate-400 border border-l-0 border-slate-700 rounded-r-md transition-colors ${!!active ? 'bg-sky-600/20 text-sky-400 border-sky-500/30' : ''}`}
+          className={chevronClass(!!activeItem)}
         >
           <ChevronDown size={12} />
         </button>
@@ -98,14 +152,15 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {tools.map(t => (
+            {items.map(t => (
               <button
-                key={t.tool}
+                key={t.id}
                 onClick={() => {
-                  onSelect(t.tool);
+                  if (t.onClick) t.onClick();
+                  else if (onSelect) onSelect(t.id);
                   setOpenGroup(null);
                 }}
-                className={`p-2 rounded-md hover:bg-slate-700 transition-colors flex items-center justify-center ${currentTool === t.tool ? 'bg-sky-500/20 text-sky-400' : 'text-slate-400'}`}
+                className={dropdownItemClass(activeId === t.id)}
                 title={t.title}
               >
                 {t.icon}
@@ -139,13 +194,16 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
         <div className="w-px h-8 bg-slate-700 mx-1 shrink-0"></div>
 
         {/* Tools */}
-        <ToolGroup
-          currentTool={activeTool}
+        {/* Select Group (Sky) */}
+        <DropdownGroup
+          groupTitle="Select"
+          activeId={activeTool}
           onSelect={onSelectTool}
-          tools={[
-            { tool: Tool.SELECT, icon: <MousePointer2 size={18} />, title: "Rectangle Select" },
-            { tool: Tool.LASSO, icon: <LassoSelect size={18} />, title: "Lasso Select" },
-            { tool: Tool.POLYGON_SELECT, icon: <Hexagon size={18} />, title: "Polygon Select" }
+          color="sky"
+          items={[
+            { id: Tool.SELECT, icon: <MousePointer2 size={18} />, title: "Rectangle Select" },
+            { id: Tool.LASSO, icon: <LassoSelect size={18} />, title: "Lasso Select" },
+            { id: Tool.POLYGON_SELECT, icon: <Hexagon size={18} />, title: "Polygon Select (Area Path)" }
           ]}
         />
         <Ripple><button onClick={() => onSelectTool(Tool.PAN)} className={btnClass(activeTool === Tool.PAN)} title="Pan">
@@ -156,38 +214,45 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
         </button></Ripple>
         <div className="w-px h-8 bg-slate-700 mx-1 shrink-0"></div>
 
-        {/* Shapes */}
-        <Ripple><button onClick={() => onAddShape(ShapeType.RECTANGLE)} className={btnClass(false)} title="Rectangle">
-          <Square size={18} />
-        </button></Ripple>
-        <Ripple><button onClick={() => onAddShape(ShapeType.CIRCLE)} className={btnClass(false)} title="Circle">
-          <Circle size={18} />
-        </button></Ripple>
-        <Ripple><button onClick={() => onAddShape(ShapeType.HEART)} className={btnClass(false)} title="Heart">
-          <Heart size={18} />
-        </button></Ripple>
-        <Ripple><button onClick={() => onSelectTool(Tool.LINE_CREATE)} className={btnClass(activeTool === Tool.LINE_CREATE)} title="Draw Straight Line">
-          <Minus size={18} className="rotate-45" />
-        </button></Ripple>
-        <Ripple><button onClick={() => onSelectTool(Tool.PEN)} className={btnClass(activeTool === Tool.PEN)} title="Free Draw (Pen)">
-          <Pen size={18} />
-        </button></Ripple>
-        <Ripple><button onClick={() => onAddShape(ShapeType.TEXT)} className={btnClass(false)} title="Text">
-          <Type size={18} />
-        </button></Ripple>
+        <div className="w-px h-8 bg-slate-700 mx-1 shrink-0"></div>
+
+        {/* Create Group (Emerald) */}
+        <DropdownGroup
+          groupTitle="Create"
+          color="emerald"
+          items={[
+            { id: 'RECT', icon: <Square size={18} />, title: "Rectangle", onClick: () => onAddShape(ShapeType.RECTANGLE) },
+            { id: 'CIRCLE', icon: <Circle size={18} />, title: "Circle", onClick: () => onAddShape(ShapeType.CIRCLE) },
+            { id: 'HEART', icon: <Heart size={18} />, title: "Heart", onClick: () => onAddShape(ShapeType.HEART) },
+            { id: 'TEXT', icon: <Type size={18} />, title: "Text", onClick: () => onAddShape(ShapeType.TEXT) }
+          ]}
+        />
+
+        {/* Drawing Tools (Violet) */}
+        <DropdownGroup
+          groupTitle="Draw"
+          activeId={activeTool}
+          onSelect={onSelectTool}
+          color="violet"
+          items={[
+            { id: Tool.PATH, icon: <Spline size={18} />, title: "Path Tool (Draw)" },
+            { id: Tool.PEN, icon: <Pen size={18} />, title: "Free Draw (Pen)" },
+            { id: Tool.LINE_CREATE, icon: <Minus size={18} className="rotate-45" />, title: "Straight Line" }
+          ]}
+        />
 
         <div className="w-px h-8 bg-slate-700 mx-1 shrink-0"></div>
 
-        {/* Groups */}
-        <Ripple><button onClick={onGroup} className={btnClass(false)} title="Group Selected">
-          <Group size={18} />
-        </button></Ripple>
-        <Ripple><button onClick={onUngroup} className={btnClass(false)} title="Ungroup">
-          <Ungroup size={18} />
-        </button></Ripple>
-        <Ripple><button onClick={onExplode} className={btnClass(false)} title="Explode Shape">
-          <Split size={18} />
-        </button></Ripple>
+        {/* Arrange Group (Amber) */}
+        <DropdownGroup
+          groupTitle="Arrange"
+          color="amber"
+          items={[
+            { id: 'GROUP', icon: <Group size={18} />, title: "Group Selected", onClick: onGroup },
+            { id: 'UNGROUP', icon: <Ungroup size={18} />, title: "Ungroup", onClick: onUngroup },
+            { id: 'EXPLODE', icon: <Split size={18} />, title: "Explode Shape", onClick: onExplode },
+          ]}
+        />
 
         <div className="w-px h-8 bg-slate-700 mx-1 shrink-0"></div>
 

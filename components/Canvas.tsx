@@ -44,7 +44,7 @@ const Canvas: React.FC<CanvasProps> = ({
 }) => {
     const svgRef = useRef<SVGSVGElement>(null);
     const [isDragging, setIsDragging] = useState(false);
-    const [dragMode, setDragMode] = useState<'SHAPE' | 'PAN' | 'MARQUEE' | 'DRAW' | 'LINE_CREATE' | 'LASSO' | 'POLYGON_SELECT' | null>(null);
+    const [dragMode, setDragMode] = useState<'SHAPE' | 'PAN' | 'MARQUEE' | 'DRAW' | 'LINE_CREATE' | 'LASSO' | 'POLYGON_SELECT' | 'PATH' | 'FENCE' | null>(null);
 
     // Panning & Zoom State
     const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -306,6 +306,40 @@ const Canvas: React.FC<CanvasProps> = ({
             return;
         }
 
+        if (activeTool === Tool.PATH) {
+            const pt = getSVGPoint(e);
+
+            if (dragMode !== 'PATH') {
+                onShapeChangeStart?.(); // Save history
+                setDragMode('PATH');
+                setIsDragging(true);
+                const newShape: PolylineShape = {
+                    id: uuidv4(),
+                    type: ShapeType.POLYLINE,
+                    x: 0, y: 0,
+                    points: [{ x: pt.x, y: pt.y }]
+                };
+                setCurrentPolyline(newShape);
+            } else {
+                setCurrentPolyline(prev => {
+                    if (!prev) return null;
+                    return {
+                        ...prev,
+                        points: [...prev.points, { x: pt.x, y: pt.y }]
+                    };
+                });
+            }
+            return;
+        }
+
+        if (activeTool === Tool.FENCE_SELECT) {
+            setDragMode('FENCE');
+            setIsDragging(true);
+            const pt = getSVGPoint(e);
+            setLassoPoints([{ x: pt.x, y: pt.y }]);
+            return;
+        }
+
         if (activeTool === Tool.SELECT) {
             setDragMode('MARQUEE');
             setIsDragging(true);
@@ -413,6 +447,15 @@ const Canvas: React.FC<CanvasProps> = ({
             // We can use a separate state for "current mouse pos" or just append a temporary point
         }
 
+        if (dragMode === 'PATH' && currentPolyline) {
+            // Optional: visual feedback for next segment could go here
+        }
+
+        if (dragMode === 'FENCE') {
+            const pt = getSVGPoint(e);
+            setLassoPoints(prev => [...prev, { x: pt.x, y: pt.y }]);
+        }
+
         if (dragMode === 'SHAPE' && shapeDragStartRef.current) {
             const point = getSVGPoint(e);
             const dx = point.x - shapeDragStartRef.current.startX;
@@ -492,6 +535,20 @@ const Canvas: React.FC<CanvasProps> = ({
             // Do nothing on up, wait for next click
             return;
         }
+
+        if (dragMode === 'FENCE') {
+            const ids = checkFenceIntersection(lassoPoints);
+            onMultiSelect(ids, e.shiftKey);
+            setLassoPoints([]);
+            setDragMode(null);
+            setIsDragging(false);
+            return;
+        }
+
+        if (dragMode === 'PATH') {
+            return;
+        }
+
         if (dragMode === 'DRAW' && currentPolyline) {
             onAddShapeFromPen(currentPolyline);
             setCurrentPolyline(null);
@@ -579,6 +636,78 @@ const Canvas: React.FC<CanvasProps> = ({
         return ids;
     };
 
+
+
+    const checkFenceIntersection = (points: { x: number, y: number }[]) => {
+        // Fence selection: Check if "points" polyline intersects with any shape
+        // Simplified approach: Check if any point of the fence is close to shape boundary? 
+        // OR standard line-line intersection for every segment of fence vs every segment of shape.
+        // That's expensive. Let's do a bounding box check first, then detailed check.
+        const ids: string[] = [];
+
+        if (points.length < 2) return ids;
+
+        const intersects = (p1: { x: number, y: number }, p2: { x: number, y: number }, s1: { x: number, y: number }, s2: { x: number, y: number }) => {
+            const det = (p2.x - p1.x) * (s2.y - s1.y) - (s2.x - s1.x) * (p2.y - p1.y);
+            if (det === 0) return false;
+            const lambda = ((s2.y - s1.y) * (s2.x - p1.x) + (s1.x - s2.x) * (s2.y - p1.y)) / det;
+            const gamma = ((p1.y - p2.y) * (s2.x - p1.x) + (p2.x - p1.x) * (s2.y - p1.y)) / det;
+            return (0 < lambda && lambda < 1) && (0 < gamma && gamma < 1);
+        };
+
+        // Check intersection with a polyline (fence)
+        const doesIntersect = (shape: Shape) => {
+            // For each segment of fence
+            for (let i = 0; i < points.length - 1; i++) {
+                const p1 = points[i];
+                const p2 = points[i + 1];
+
+                // Check vs shape bbox first for perf
+                // TODO: BBox check
+
+                if (shape.type === ShapeType.LINE) {
+                    const l = shape as LineShape;
+                    if (intersects(p1, p2, { x: l.x, y: l.y }, { x: l.x2, y: l.y2 })) return true;
+                } else if (shape.type === ShapeType.RECTANGLE) {
+                    const r = shape as RectangleShape;
+                    // 4 lines
+                    if (intersects(p1, p2, { x: r.x, y: r.y }, { x: r.x + r.width, y: r.y })) return true;
+                    if (intersects(p1, p2, { x: r.x + r.width, y: r.y }, { x: r.x + r.width, y: r.y + r.height })) return true;
+                    if (intersects(p1, p2, { x: r.x + r.width, y: r.y + r.height }, { x: r.x, y: r.y + r.height })) return true;
+                    if (intersects(p1, p2, { x: r.x, y: r.y + r.height }, { x: r.x, y: r.y })) return true;
+                } else if (shape.type === ShapeType.POLYLINE) {
+                    const pl = shape as PolylineShape;
+                    for (let j = 0; j < pl.points.length - 1; j++) {
+                        if (intersects(p1, p2, { x: pl.points[j].x + pl.x, y: pl.points[j].y + pl.y }, { x: pl.points[j + 1].x + pl.x, y: pl.points[j + 1].y + pl.y })) return true;
+                    }
+                } else if (shape.type === ShapeType.CIRCLE) {
+                    // Approx line vs circle
+                    const c = shape as CircleShape;
+                    // Distance from segment to center < radius
+                    const len2 = (p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2;
+                    let t = ((c.x - p1.x) * (p2.x - p1.x) + (c.y - p1.y) * (p2.y - p1.y)) / len2;
+                    t = Math.max(0, Math.min(1, t));
+                    const projX = p1.x + t * (p2.x - p1.x);
+                    const projY = p1.y + t * (p2.y - p1.y);
+                    const dist = Math.hypot(c.x - projX, c.y - projY);
+                    if (dist < c.radius) return true;
+                }
+                // ... other shapes simplified
+            }
+            return false;
+        };
+
+        shapes.forEach(s => {
+            if (doesIntersect(s)) ids.push(s.id);
+            else if (s.type === ShapeType.GROUP) {
+                const g = s as GroupShape;
+                if (g.children.some(doesIntersect)) ids.push(s.id);
+            }
+        });
+
+        return ids;
+    };
+
     const checkIntersection = (rect: { x: number, y: number, width: number, height: number }) => {
         const ids: string[] = [];
 
@@ -624,6 +753,13 @@ const Canvas: React.FC<CanvasProps> = ({
             const ids = checkLassoIntersection(lassoPoints);
             onMultiSelect(ids, e.shiftKey);
             setLassoPoints([]);
+            setDragMode(null);
+            setIsDragging(false);
+        } else if (dragMode === 'PATH' && currentPolyline) {
+            if (currentPolyline.points.length > 1) {
+                onAddShapeFromPen(currentPolyline);
+            }
+            setCurrentPolyline(null);
             setDragMode(null);
             setIsDragging(false);
         }
@@ -1035,12 +1171,24 @@ const Canvas: React.FC<CanvasProps> = ({
                 )}
 
                 {/* Lasso Selection Path */}
-                {lassoPoints.length > 0 && (
+                {lassoPoints.length > 0 && dragMode === 'LASSO' && (
                     <polyline
                         points={lassoPoints.map(p => `${p.x},${p.y}`).join(' ')}
                         fill="rgba(250, 204, 21, 0.1)"
                         stroke="#facc15"
                         strokeWidth={1 / zoom}
+                        strokeDasharray={`${4 / zoom} ${2 / zoom}`}
+                        pointerEvents="none"
+                    />
+                )}
+
+                {/* Fence Selection Path */}
+                {lassoPoints.length > 0 && dragMode === 'FENCE' && (
+                    <polyline
+                        points={lassoPoints.map(p => `${p.x},${p.y}`).join(' ')}
+                        fill="none"
+                        stroke="#d946ef" // Fuchsia color for fence
+                        strokeWidth={2 / zoom}
                         strokeDasharray={`${4 / zoom} ${2 / zoom}`}
                         pointerEvents="none"
                     />

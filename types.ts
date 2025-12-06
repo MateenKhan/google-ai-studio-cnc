@@ -16,6 +16,8 @@ export enum Tool {
   LINE_CREATE = 'LINE_CREATE',
   LASSO = 'LASSO',
   POLYGON_SELECT = 'POLYGON_SELECT',
+  FENCE_SELECT = 'FENCE_SELECT',
+  PATH = 'PATH',
 }
 
 export enum Unit {
