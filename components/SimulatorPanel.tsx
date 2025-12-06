@@ -140,15 +140,25 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({
     };
 
     // Parse G-code to paths with Z support and Arc subdivision
-    const { segments, totalLength } = useMemo(() => {
+    const { segments, totalLength, totalTime } = useMemo(() => {
         const lines = gcode.split('\n');
-        const segs: { x1: number, y1: number, z1: number, x2: number, y2: number, z2: number, type: 'G0' | 'G1' | 'ARC', lineIndex: number, length: number, cumulativeLength: number }[] = [];
+        const segs: { x1: number, y1: number, z1: number, x2: number, y2: number, z2: number, type: 'G0' | 'G1' | 'ARC', lineIndex: number, length: number, cumulativeLength: number, time: number }[] = [];
         let x = 0, y = 0, z = 0;
         let totalLen = 0;
+        let totalTimeSec = 0;
+
+        let currentFeed = 1000; // Default feed rate mm/min
+        const rapidFeed = 3000; // Assumed rapid speed mm/min
 
         lines.forEach((line, index) => {
             const l = line.trim().toUpperCase();
             if (!l || l.startsWith(';') || l.startsWith('(')) return;
+
+            // Check for Feed rate update
+            const fMatch = l.match(/F([\d\.-]+)/);
+            if (fMatch) {
+                currentFeed = parseFloat(fMatch[1]);
+            }
 
             const isG0 = l.startsWith('G0');
             const isG1 = l.startsWith('G1');
@@ -166,15 +176,22 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({
             if (isG0 || isG1) {
                 if (newX !== x || newY !== y || newZ !== z) {
                     const len = Math.hypot(newX - x, newY - y, newZ - z);
+
+                    // Calculate Time
+                    const speed = isG0 ? rapidFeed : currentFeed;
+                    const time = (len / speed) * 60; // Minutes to Seconds
+
                     segs.push({
                         x1: x, y1: y, z1: z,
                         x2: newX, y2: newY, z2: newZ,
                         type: isG0 ? 'G0' : 'G1',
                         lineIndex: index,
                         length: len,
-                        cumulativeLength: totalLen + len
+                        cumulativeLength: totalLen + len,
+                        time: time
                     });
                     totalLen += len;
+                    totalTimeSec += time;
                 }
                 x = newX; y = newY; z = newZ;
             } else if (isG2 || isG3) {
@@ -211,22 +228,35 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({
                     const pz = z + (newZ - z) * t; // Helical interpolation
 
                     const len = Math.hypot(px - lx, py - ly, pz - lz);
+
+                    // Arc Time (Current Feed)
+                    const time = (len / currentFeed) * 60;
+
                     segs.push({
                         x1: lx, y1: ly, z1: lz,
                         x2: px, y2: py, z2: pz,
                         type: 'ARC',
                         lineIndex: index,
                         length: len,
-                        cumulativeLength: totalLen + len
+                        cumulativeLength: totalLen + len,
+                        time: time
                     });
                     totalLen += len;
+                    totalTimeSec += time;
                     lx = px; ly = py; lz = pz;
                 }
                 x = newX; y = newY; z = newZ;
             }
         });
-        return { segments: segs, totalLength: totalLen };
+        return { segments: segs, totalLength: totalLen, totalTime: totalTimeSec };
     }, [gcode]);
+
+    const formatTime = (seconds: number) => {
+        if (seconds < 60) return `${Math.ceil(seconds)}s`;
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.ceil(seconds % 60);
+        return `${mins}m ${secs}s`;
+    };
 
     // Simulation Loop
     const animate = (time: number) => {
@@ -1302,7 +1332,10 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({
                                 <div className="flex-1 flex flex-col gap-1">
                                     <div className="flex justify-between text-xs text-slate-400">
                                         <span>Simulation Progress</span>
-                                        <span>{Math.round(simProgress * 100)}%</span>
+                                        <div className="flex gap-2">
+                                            <span className="text-sky-400">Est. Time: {formatTime(totalTime)}</span>
+                                            <span>{Math.round(simProgress * 100)}%</span>
+                                        </div>
                                     </div>
                                     <input
                                         type="range"
