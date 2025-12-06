@@ -120,7 +120,7 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({
     // Simulation State
     const [isSimulating, setIsSimulating] = useState(false);
     const [simProgress, setSimProgress] = useState(0); // 0 to 1
-    const [simSpeed, setSimSpeed] = useState(1); // Multiplier
+    const [simSpeed, setSimSpeed] = useState(2); // Multiplier
     const requestRef = useRef<number>();
     const startTimeRef = useRef<number>();
     const startProgressRef = useRef<number>(0);
@@ -1318,17 +1318,16 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({
 
                                 <div className="flex items-center gap-2">
                                     <span className="text-xs text-slate-400">Speed:</span>
-                                    <select
+                                    <span className="text-xs text-slate-400">Speed:</span>
+                                    <input
+                                        type="number"
+                                        min="0.1"
+                                        step="0.1"
                                         value={simSpeed}
-                                        onChange={(e) => setSimSpeed(parseFloat(e.target.value))}
-                                        className="bg-slate-900 border border-slate-700 text-xs text-slate-300 rounded px-1 py-1"
-                                    >
-                                        <option value="0.5">0.5x</option>
-                                        <option value="1">1x</option>
-                                        <option value="2">2x</option>
-                                        <option value="5">5x</option>
-                                        <option value="10">10x</option>
-                                    </select>
+                                        onChange={(e) => setSimSpeed(Math.max(0.1, parseFloat(e.target.value)))}
+                                        className="bg-slate-900 border border-slate-700 text-xs text-slate-300 rounded px-1 py-1 w-16 text-center"
+                                    />
+                                    <span className="text-xs text-slate-500">x</span>
                                 </div>
                             </div>
                         </div>
