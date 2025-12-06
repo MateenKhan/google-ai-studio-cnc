@@ -781,7 +781,7 @@ const Canvas: React.FC<CanvasProps> = ({
             >
                 <defs>
                     <pattern id="grid" width={gridSize} height={gridSize} patternUnits="userSpaceOnUse">
-                        <path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="#334155" strokeWidth="1" />
+                        <path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="#334155" strokeWidth={1 / zoom} />
                     </pattern>
                     <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
                         <path d="M0,0 L0,6 L6,3 z" fill="#22d3ee" />
