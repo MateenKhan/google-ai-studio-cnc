@@ -15,6 +15,7 @@ export enum Tool {
   PEN = 'PEN',
   LINE_CREATE = 'LINE_CREATE',
   LASSO = 'LASSO',
+  POLYGON_SELECT = 'POLYGON_SELECT',
 }
 
 export enum Unit {

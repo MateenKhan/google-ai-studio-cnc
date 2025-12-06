@@ -44,7 +44,7 @@ const Canvas: React.FC<CanvasProps> = ({
 }) => {
     const svgRef = useRef<SVGSVGElement>(null);
     const [isDragging, setIsDragging] = useState(false);
-    const [dragMode, setDragMode] = useState<'SHAPE' | 'PAN' | 'MARQUEE' | 'DRAW' | 'LINE_CREATE' | 'LASSO' | null>(null);
+    const [dragMode, setDragMode] = useState<'SHAPE' | 'PAN' | 'MARQUEE' | 'DRAW' | 'LINE_CREATE' | 'LASSO' | 'POLYGON_SELECT' | null>(null);
 
     // Panning & Zoom State
     const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -52,21 +52,34 @@ const Canvas: React.FC<CanvasProps> = ({
     const panStartRef = useRef<{ x: number, y: number } | null>(null);
     const isCenteredRef = useRef(false);
 
+    // Viewport Size State (instead of window.inner)
+    const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+
+    useEffect(() => {
+        if (!containerRef.current) return;
+        const ro = new ResizeObserver(entries => {
+            for (const entry of entries) {
+                const { width, height } = entry.contentRect;
+                setViewportSize({ width, height });
+            }
+        });
+        ro.observe(containerRef.current);
+        return () => ro.disconnect();
+    }, []);
+
     // Center the view on 0,0 on mount
     useEffect(() => {
-        if (!isCenteredRef.current && svgRef.current) {
-            const cw = window.innerWidth;
-            const ch = window.innerHeight;
+        if (!isCenteredRef.current && viewportSize.width > 0 && viewportSize.height > 0) {
             const initialZoom = 0.5;
             // Center 0,0 in the screen
             setZoom(initialZoom);
             setPan({
-                x: -(cw / 2) / initialZoom,
-                y: -(ch / 2) / initialZoom
+                x: -(viewportSize.width / 2) / initialZoom,
+                y: -(viewportSize.height / 2) / initialZoom
             });
             isCenteredRef.current = true;
         }
-    }, []);
+    }, [viewportSize]);
 
     // Touch Pinch/Pan State
     const pinchStartDistRef = useRef<number | null>(null);
@@ -106,29 +119,46 @@ const Canvas: React.FC<CanvasProps> = ({
         return pt.matrixTransform(ctm.inverse());
     };
 
+    // Refs for event listeners to access current state without re-binding
+    const zoomRef = useRef(zoom);
+    const panRef = useRef(pan);
+    const containerRef = useRef<HTMLDivElement>(null);
+
     useEffect(() => {
-        const svg = svgRef.current;
-        if (!svg) return;
+        zoomRef.current = zoom;
+        panRef.current = pan;
+    }, [zoom, pan]);
+
+    useEffect(() => {
+        const container = containerRef.current;
+        // if (!container) return; // Keep container ref for rect calculation, but don't block listener if null? No, we need it.
 
         const onWheel = (e: WheelEvent) => {
+            console.log('Global wheel event', e.deltaY, e.target);
+            // Check if the event target is within the canvas container
+            // if (container && container.contains(e.target as Node)) {
             e.preventDefault();
+            const currentZoom = zoomRef.current;
+            const currentPan = panRef.current;
+
             const zoomSensitivity = 0.001;
             const zoomFactor = Math.exp(-e.deltaY * zoomSensitivity);
-            const newZoom = Math.min(Math.max(zoom * zoomFactor, 0.05), 10);
+            const newZoom = Math.min(Math.max(currentZoom * zoomFactor, 0.05), 10);
 
-            const rect = svg.getBoundingClientRect();
+            const rect = container ? container.getBoundingClientRect() : { left: 0, top: 0 };
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
 
-            const newPanX = pan.x + mouseX * (1 / zoom - 1 / newZoom);
-            const newPanY = pan.y + mouseY * (1 / zoom - 1 / newZoom);
+            const newPanX = currentPan.x + mouseX * (1 / currentZoom - 1 / newZoom);
+            const newPanY = currentPan.y + mouseY * (1 / currentZoom - 1 / newZoom);
 
             setZoom(newZoom);
             setPan({ x: newPanX, y: newPanY });
+            // }
         };
 
         const onTouchStart = (e: TouchEvent) => {
-            if (e.touches.length === 2) {
+            if (e.touches.length === 2 && container.contains(e.target as Node)) {
                 e.preventDefault();
                 const dist = Math.hypot(
                     e.touches[0].clientX - e.touches[1].clientX,
@@ -139,12 +169,12 @@ const Canvas: React.FC<CanvasProps> = ({
                     x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
                     y: (e.touches[0].clientY + e.touches[1].clientY) / 2
                 };
-                startZoomRef.current = zoom;
+                startZoomRef.current = zoomRef.current;
             }
         };
 
         const onTouchMove = (e: TouchEvent) => {
-            if (e.touches.length === 2 && pinchStartDistRef.current && touchStartCenterRef.current) {
+            if (e.touches.length === 2 && pinchStartDistRef.current && touchStartCenterRef.current && container.contains(e.target as Node)) {
                 e.preventDefault();
                 const dist = Math.hypot(
                     e.touches[0].clientX - e.touches[1].clientX,
@@ -157,28 +187,31 @@ const Canvas: React.FC<CanvasProps> = ({
                 const cx = touchStartCenterRef.current.x;
                 const cy = touchStartCenterRef.current.y;
 
-                const rect = svg.getBoundingClientRect();
+                const rect = container.getBoundingClientRect();
                 const mouseX = cx - rect.left;
                 const mouseY = cy - rect.top;
 
-                const newPanX = pan.x + mouseX * (1 / zoom - 1 / newZoom);
-                const newPanY = pan.y + mouseY * (1 / zoom - 1 / newZoom);
+                const currentZoom = zoomRef.current;
+                const currentPan = panRef.current;
+
+                const newPanX = currentPan.x + mouseX * (1 / currentZoom - 1 / newZoom);
+                const newPanY = currentPan.y + mouseY * (1 / currentZoom - 1 / newZoom);
 
                 setZoom(newZoom);
                 setPan({ x: newPanX, y: newPanY });
             }
         };
 
-        svg.addEventListener('wheel', onWheel, { passive: false });
-        svg.addEventListener('touchstart', onTouchStart, { passive: false });
-        svg.addEventListener('touchmove', onTouchMove, { passive: false });
+        window.addEventListener('wheel', onWheel, { passive: false });
+        window.addEventListener('touchstart', onTouchStart, { passive: false });
+        window.addEventListener('touchmove', onTouchMove, { passive: false });
 
         return () => {
-            svg.removeEventListener('wheel', onWheel);
-            svg.removeEventListener('touchstart', onTouchStart);
-            svg.removeEventListener('touchmove', onTouchMove);
+            window.removeEventListener('wheel', onWheel);
+            window.removeEventListener('touchstart', onTouchStart);
+            window.removeEventListener('touchmove', onTouchMove);
         };
-    }, [zoom, pan]); // Re-bind when state changes to capture new values
+    }, []); // Empty dependency array - bind once!
 
     const findSnapPoint = (x: number, y: number): { x: number, y: number } | null => {
         const SNAP_DIST = 10 / zoom;
@@ -207,9 +240,10 @@ const Canvas: React.FC<CanvasProps> = ({
     };
 
     const handlePointerDown = (e: React.PointerEvent) => {
+        console.log('handlePointerDown', e.button, activeTool);
         e.currentTarget.setPointerCapture(e.pointerId);
 
-        // Middle Mouse Button or Pan Tool
+        // Middle Mouse Button or Pan Tool (Allow Left Click for Pan Tool)
         if (activeTool === Tool.PAN || e.button === 1) {
             setDragMode('PAN');
             setIsDragging(true);
@@ -253,6 +287,22 @@ const Canvas: React.FC<CanvasProps> = ({
             setIsDragging(true);
             const pt = getSVGPoint(e);
             setLassoPoints([{ x: pt.x, y: pt.y }]);
+            return;
+        }
+
+        if (activeTool === Tool.POLYGON_SELECT) {
+            // If we are already drawing a polygon (dragMode is POLYGON_SELECT), add a point
+            // If not, start a new one
+            const pt = getSVGPoint(e);
+
+            if (dragMode !== 'POLYGON_SELECT') {
+                setDragMode('POLYGON_SELECT');
+                setIsDragging(true); // Keep dragging true to capture events? Maybe not needed for click-click
+                setLassoPoints([{ x: pt.x, y: pt.y }]); // Start point
+            } else {
+                // Add point
+                setLassoPoints(prev => [...prev, { x: pt.x, y: pt.y }]);
+            }
             return;
         }
 
@@ -357,6 +407,12 @@ const Canvas: React.FC<CanvasProps> = ({
             setLassoPoints(prev => [...prev, { x: pt.x, y: pt.y }]);
         }
 
+        if (dragMode === 'POLYGON_SELECT') {
+            // Optional: Update a "preview" point if we want to show the line being drawn
+            // For now, we just rely on clicks, but maybe we want to visualize the next segment?
+            // We can use a separate state for "current mouse pos" or just append a temporary point
+        }
+
         if (dragMode === 'SHAPE' && shapeDragStartRef.current) {
             const point = getSVGPoint(e);
             const dx = point.x - shapeDragStartRef.current.startX;
@@ -426,6 +482,16 @@ const Canvas: React.FC<CanvasProps> = ({
         } else if (dragMode === 'LASSO') {
             setLassoPoints([]);
         }
+
+        // Polygon is handled by clicks, but we need to detect "finish"
+        // For now, let's say double click finishes, or clicking near start
+        // We'll handle that in handlePointerDown or a separate handler?
+        // Actually, handlePointerUp is for drag end. Polygon is click-click.
+        // So we don't clear dragMode here for POLYGON_SELECT unless we are done.
+        if (dragMode === 'POLYGON_SELECT') {
+            // Do nothing on up, wait for next click
+            return;
+        }
         if (dragMode === 'DRAW' && currentPolyline) {
             onAddShapeFromPen(currentPolyline);
             setCurrentPolyline(null);
@@ -442,7 +508,6 @@ const Canvas: React.FC<CanvasProps> = ({
         panStartRef.current = null;
         shapeDragStartRef.current = null;
         marqueeStartRef.current = null;
-        try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (err) { }
     };
 
     const checkLassoIntersection = (points: { x: number, y: number }[]) => {
@@ -553,6 +618,20 @@ const Canvas: React.FC<CanvasProps> = ({
         shapes.forEach(checkShape);
         return ids;
     };
+
+    const handleDoubleClick = (e: React.MouseEvent) => {
+        if (dragMode === 'POLYGON_SELECT' && lassoPoints.length > 2) {
+            const ids = checkLassoIntersection(lassoPoints);
+            onMultiSelect(ids, e.shiftKey);
+            setLassoPoints([]);
+            setDragMode(null);
+            setIsDragging(false);
+        }
+    };
+
+
+
+
 
     const renderHeartPath = (s: HeartShape) => {
         let d = "";
@@ -842,8 +921,8 @@ const Canvas: React.FC<CanvasProps> = ({
         return null;
     };
 
-    const viewBoxW = window.innerWidth / zoom;
-    const viewBoxH = window.innerHeight / zoom;
+    const viewBoxW = viewportSize.width / zoom;
+    const viewBoxH = viewportSize.height / zoom;
     const viewBoxStr = `${pan.x} ${pan.y} ${viewBoxW} ${viewBoxH}`;
 
     const rulerStep = zoom > 1 ? 10 : zoom > 0.5 ? 50 : 100;
@@ -861,19 +940,25 @@ const Canvas: React.FC<CanvasProps> = ({
     }
 
     return (
-        <div className={`flex-1 bg-slate-900 relative overflow-hidden flex flex-col items-center justify-center min-h-[400px] select-none ${activeTool === Tool.PAN ? 'cursor-grab active:cursor-grabbing' : ''} ${activeTool === Tool.PEN || activeTool === Tool.LINE_CREATE ? 'cursor-crosshair' : ''}`}>
+        <div
+            ref={containerRef}
+            className={`flex-1 bg-slate-900 relative overflow-hidden flex flex-col items-center justify-center min-h-[400px] select-none ${activeTool === Tool.PAN ? 'cursor-grab active:cursor-grabbing' : ''} ${activeTool === Tool.PEN || activeTool === Tool.LINE_CREATE ? 'cursor-crosshair' : ''}`}
+        >
             <div className="absolute top-4 left-4 text-slate-500 text-sm select-none pointer-events-none z-10 bg-slate-900/50 backdrop-blur rounded px-2 border border-slate-700">
                 Canvas: {formatUnit(canvasWidth, unit, 0)} x {formatUnit(canvasHeight, unit, 0)} | Grid: {gridSize}mm | Zoom: {(zoom * 100).toFixed(0)}%
             </div>
 
             <svg
                 ref={svgRef}
-                className="w-full h-full bg-slate-800 touch-none"
+                className="absolute inset-0 w-full h-full touch-none"
+                style={{ pointerEvents: 'all' }}
                 viewBox={viewBoxStr}
+                preserveAspectRatio="xMidYMid slice"
                 onPointerDown={handlePointerDown}
-                onPointerUp={handlePointerUp}
                 onPointerMove={handlePointerMove}
-            >
+                onPointerUp={handlePointerUp}
+                onPointerLeave={handlePointerUp}
+                onDoubleClick={handleDoubleClick}>
                 <defs>
                     <pattern id="grid" width={gridSize} height={gridSize} patternUnits="userSpaceOnUse">
                         <path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="#334155" strokeWidth={1 / zoom} />
@@ -964,17 +1049,19 @@ const Canvas: React.FC<CanvasProps> = ({
 
             </svg>
 
-            {selectedIds.length > 0 && (
-                <div className="absolute bottom-24 md:bottom-24 left-1/2 -translate-x-1/2 bg-slate-800 p-2 rounded-full shadow-lg border border-slate-700 flex gap-4 z-20 items-center">
-                    <button
-                        onClick={() => onDeleteShapes(selectedIds)}
-                        className="p-1 hover:bg-red-500/20 text-red-400 rounded-full transition-colors flex items-center gap-1 pr-3"
-                    >
-                        <Trash2 size={16} /> Delete
-                    </button>
-                </div>
-            )}
-        </div>
+            {
+                selectedIds.length > 0 && (
+                    <div className="absolute bottom-24 md:bottom-24 left-1/2 -translate-x-1/2 bg-slate-800 p-2 rounded-full shadow-lg border border-slate-700 flex gap-4 z-20 items-center">
+                        <button
+                            onClick={() => onDeleteShapes(selectedIds)}
+                            className="p-1 hover:bg-red-500/20 text-red-400 rounded-full transition-colors flex items-center gap-1 pr-3"
+                        >
+                            <Trash2 size={16} /> Delete
+                        </button>
+                    </div>
+                )
+            }
+        </div >
     );
 };
 
