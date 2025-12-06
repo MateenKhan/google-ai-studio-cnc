@@ -87,6 +87,7 @@ const Canvas: React.FC<CanvasProps> = ({
     const [currentPolyline, setCurrentPolyline] = useState<PolylineShape | null>(null);
     const [currentLine, setCurrentLine] = useState<LineShape | null>(null);
     const [snapPoint, setSnapPoint] = useState<{ x: number, y: number } | null>(null);
+    const [hoveredId, setHoveredId] = useState<string | null>(null);
 
     const getSVGPoint = (event: React.PointerEvent | React.TouchEvent | React.WheelEvent | MouseEvent) => {
         const svg = svgRef.current;
@@ -506,9 +507,10 @@ const Canvas: React.FC<CanvasProps> = ({
 
     const renderShape = (shape: Shape, parentId?: string): React.ReactNode => {
         const isSelected = selectedIds.includes(shape.id) || (parentId && selectedIds.includes(parentId));
-        const stroke = isSelected ? "#38bdf8" : "#94a3b8";
+        const isHovered = hoveredId === shape.id || (parentId && hoveredId === parentId);
+        const stroke = isSelected || isHovered ? "#38bdf8" : "#94a3b8";
         const isPreview = shape.id === currentPolyline?.id || shape.id === currentLine?.id;
-        const sw = (isSelected || isPreview ? 2 : 1) / zoom;
+        const sw = (isSelected || isHovered || isPreview ? 5 : 3) / zoom;
 
         const commonProps = {
             onPointerDown: (e: React.PointerEvent) => {
@@ -519,7 +521,9 @@ const Canvas: React.FC<CanvasProps> = ({
                     handleShapePointerDown(e, shape);
                 }
             },
-            className: `outline-none ${activeTool === Tool.SELECT ? 'cursor-move hover:opacity-80' : ''}`,
+            onPointerEnter: () => setHoveredId(parentId || shape.id),
+            onPointerLeave: () => setHoveredId(null),
+            className: `outline-none ${activeTool === Tool.SELECT ? 'cursor-move' : ''}`,
             style: { touchAction: 'none' as const }
         };
 
