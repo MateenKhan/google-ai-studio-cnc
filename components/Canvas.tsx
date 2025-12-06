@@ -1,5 +1,5 @@
 
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { Shape, ShapeType, RectangleShape, CircleShape, TextShape, Tool, HeartShape, LineShape, PolylineShape, Unit, MirrorMode, GroupShape } from '../types';
 import { Trash2 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
@@ -1131,13 +1131,46 @@ const Canvas: React.FC<CanvasProps> = ({
         if (y % rulerStep === 0) rulerTicks.push({ val: y, type: 'y' });
     }
 
+    // Adaptive Grid Calculation
+    const adaptiveGridSize = useMemo(() => {
+        const minPixelSpacing = 20; // Minimum visual spacing in pixels
+        let size = gridSize;
+
+        // Visual size = size * zoom
+        // We want visual size >= minPixelSpacing
+
+        // If zoomed in (zoom > 1), we might need smaller lines, but typically standard millimeters are fine unless we go sub-mm.
+        // If zoomed out (zoom < 1), standard 10mm lines become too dense.
+
+        const visualSize = size * zoom;
+
+        if (visualSize < minPixelSpacing) {
+            // Grid is too dense, need to step up (10 -> 50 -> 100 -> 500...)
+            const multipliers = [2, 5, 10]; // Step from 10 to 20, 50, 100
+            let mIdx = 0;
+            let currentSize = size;
+            while (currentSize * zoom < minPixelSpacing) {
+                // If we are at 10, next is 20 (x2), then 50 (x2.5->x5 total), then 100 (x2->x10 total)
+                // Simplified powers of 10 approach for scaling
+                if (currentSize === 10) currentSize = 50;
+                else if (currentSize === 50) currentSize = 100;
+                else if (currentSize === 100) currentSize = 500;
+                else if (currentSize === 500) currentSize = 1000;
+                else currentSize *= 2; // Fallback
+            }
+            size = currentSize;
+        }
+
+        return size;
+    }, [zoom, gridSize]);
+
     return (
         <div
             ref={containerRef}
             className={`flex-1 bg-slate-900 relative overflow-hidden flex flex-col items-center justify-center min-h-[400px] select-none ${activeTool === Tool.PAN ? 'cursor-grab active:cursor-grabbing' : ''} ${activeTool === Tool.PEN || activeTool === Tool.LINE_CREATE ? 'cursor-crosshair' : ''}`}
         >
             <div className="absolute top-4 left-4 text-slate-500 text-sm select-none pointer-events-none z-10 bg-slate-900/50 backdrop-blur rounded px-2 border border-slate-700">
-                Canvas: {formatUnit(canvasWidth, unit, 0)} x {formatUnit(canvasHeight, unit, 0)} | Grid: {gridSize}mm | Zoom: {(zoom * 100).toFixed(0)}%
+                Canvas: {formatUnit(canvasWidth, unit, 0)} x {formatUnit(canvasHeight, unit, 0)} | Grid: {adaptiveGridSize}mm | Zoom: {(zoom * 100).toFixed(0)}%
             </div>
 
             <svg
@@ -1152,8 +1185,8 @@ const Canvas: React.FC<CanvasProps> = ({
                 onPointerLeave={handlePointerUp}
                 onDoubleClick={handleDoubleClick}>
                 <defs>
-                    <pattern id="grid" width={gridSize} height={gridSize} patternUnits="userSpaceOnUse">
-                        <path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="#334155" strokeWidth={1 / zoom} />
+                    <pattern id="grid" width={adaptiveGridSize} height={adaptiveGridSize} patternUnits="userSpaceOnUse">
+                        <path d={`M ${adaptiveGridSize} 0 L 0 0 0 ${adaptiveGridSize}`} fill="none" stroke="#334155" strokeWidth={1 / zoom} />
                     </pattern>
                     <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
                         <path d="M0,0 L0,6 L6,3 z" fill="#22d3ee" />
@@ -1163,12 +1196,14 @@ const Canvas: React.FC<CanvasProps> = ({
                     </marker>
                 </defs>
 
-                <rect x="-1000" y="-1000" width={canvasWidth + 2000} height={canvasHeight + 2000} fill="#0f172a" />
-                {/* Center the workspace rectangle so 0,0 is at center */}
-                <rect x={-canvasWidth / 2} y={-canvasHeight / 2} width={canvasWidth} height={canvasHeight} fill="url(#grid)" />
+                {/* Infinite Background Grid - Massive Rect */}
+                <rect x="-100000" y="-100000" width="200000" height="200000" fill="url(#grid)" />
 
-                <line x1="-10000" y1="0" x2="10000" y2="0" stroke="#ef4444" strokeWidth={2 / zoom} opacity="0.8" />
-                <line x1="0" y1="-10000" x2="0" y2="10000" stroke="#22c55e" strokeWidth={2 / zoom} opacity="0.8" />
+                {/* Workspace Bounds (Visual only, no fill to not hide grid) */}
+                <rect x={-canvasWidth / 2} y={-canvasHeight / 2} width={canvasWidth} height={canvasHeight} fill="none" stroke="#1e293b" strokeWidth={2 / zoom} strokeDasharray={`${10 / zoom},${10 / zoom}`} />
+
+                <line x1="-100000" y1="0" x2="100000" y2="0" stroke="#ef4444" strokeWidth={2 / zoom} opacity="0.8" />
+                <line x1="0" y1="-100000" x2="0" y2="100000" stroke="#22c55e" strokeWidth={2 / zoom} opacity="0.8" />
 
                 <g className="select-none pointer-events-none">
                     {rulerTicks.map((tick) => (
