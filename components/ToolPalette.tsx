@@ -1,6 +1,6 @@
 
 import React, { useRef } from 'react';
-import { Square, Circle, Type, MousePointer2, Hand, Ruler, Heart, Pen, Minus, LayoutTemplate, ChevronDown, Upload, Download, Group, Ungroup, Split } from 'lucide-react';
+import { Square, Circle, Type, MousePointer2, Hand, Ruler, Heart, Pen, Minus, LayoutTemplate, ChevronDown, Upload, Download, Group, Ungroup, Split, Undo2, Redo2 } from 'lucide-react';
 import { ShapeType, Tool, Unit } from '../types';
 import Ripple from './Ripple';
 
@@ -20,6 +20,8 @@ interface ToolPaletteProps {
   onGroup: () => void;
   onUngroup: () => void;
   onExplode: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
 }
 
 const ToolPalette: React.FC<ToolPaletteProps> = ({
@@ -36,7 +38,9 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
   onImportSVG,
   onGroup,
   onUngroup,
-  onExplode
+  onExplode,
+  onUndo,
+  onRedo
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -50,6 +54,15 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
     <div className="z-30 bg-slate-900/95 backdrop-blur border-t border-slate-700 shadow-2xl flex absolute bottom-0 left-0 right-0 w-full flex-row items-center p-2 gap-2 overflow-x-auto safe-area-bottom justify-between md:justify-center">
 
       <div className="flex gap-2 items-center">
+        {/* Undo/Redo */}
+        <Ripple><button onClick={onUndo} className={btnClass(false)} title="Undo (Ctrl+Z)">
+          <Undo2 size={18} />
+        </button></Ripple>
+        <Ripple><button onClick={onRedo} className={btnClass(false)} title="Redo (Ctrl+Y)">
+          <Redo2 size={18} />
+        </button></Ripple>
+        <div className="w-px h-8 bg-slate-700 mx-1 shrink-0"></div>
+
         {/* Tools */}
         <Ripple><button onClick={() => onSelectTool(Tool.SELECT)} className={btnClass(activeTool === Tool.SELECT)} title="Select">
           <MousePointer2 size={18} />

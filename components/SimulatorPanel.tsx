@@ -43,8 +43,8 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({
 
     // Accordion States
     const [isGCodeExpanded, setIsGCodeExpanded] = useState(false);
-    const [isSimulationExpanded, setIsSimulationExpanded] = useState(true);
-    const [isJobControlExpanded, setIsJobControlExpanded] = useState(true);
+    // Simulation controls always visible
+    const [isJobControlExpanded, setIsJobControlExpanded] = useState(false);
 
     // Selection
     const [selectedLineIndex, setSelectedLineIndex] = useState<number | null>(null);
@@ -1299,78 +1299,58 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({
                 </div>
             </div>
 
-            {/* Simulation Controls Accordion */}
+            {/* Simulation Controls */}
             <div className="bg-slate-800 border-t border-slate-700 shrink-0 z-20">
-                <Ripple>
-                    <button
-                        onClick={() => setIsSimulationExpanded(!isSimulationExpanded)}
-                        className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-700/50 transition-colors cursor-pointer"
-                        aria-expanded={isSimulationExpanded}
-                        aria-controls="simulation-accordion-content"
-                    >
-                        <h3 className="text-sm font-semibold text-slate-300 uppercase flex items-center gap-2">
-                            {isSimulationExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                            Simulation Controls
-                        </h3>
-                    </button>
-                </Ripple>
-                <div
-                    id="simulation-accordion-content"
-                    className="overflow-hidden transition-all duration-300 ease-in-out"
-                    style={{
-                        maxHeight: isSimulationExpanded ? '200px' : '0px'
-                    }}
-                >
-                    <div className="border-t border-slate-700 p-2 flex items-center gap-4 px-4">
-                        <Ripple>
-                            <button
-                                onClick={handleToggleSimulation}
-                                className={`p-2 rounded-full ${isSimulating ? 'bg-yellow-600 text-white' : 'bg-sky-600 text-white'} hover:opacity-90`}
-                            >
-                                {isSimulating ? <Pause size={16} /> : <Play size={16} />}
-                            </button>
-                        </Ripple>
-                        <Ripple>
-                            <button onClick={handleSimStop} className="p-2 text-slate-400 hover:text-white">
-                                <Square size={16} />
-                            </button>
-                        </Ripple>
+                <div className="p-2 flex items-center gap-4 px-4">
+                    <Ripple>
+                        <button
+                            onClick={handleToggleSimulation}
+                            className={`p-2 rounded-full ${isSimulating ? 'bg-yellow-600 text-white' : 'bg-sky-600 text-white'} hover:opacity-90`}
+                        >
+                            {isSimulating ? <Pause size={16} /> : <Play size={16} />}
+                        </button>
+                    </Ripple>
+                    <Ripple>
+                        <button onClick={handleSimStop} className="p-2 text-slate-400 hover:text-white">
+                            <Square size={16} />
+                        </button>
+                    </Ripple>
 
-                        <div className="flex-1 flex flex-col gap-1">
-                            <div className="flex justify-between text-xs text-slate-400">
-                                <span>Simulation Progress</span>
-                                <span>{Math.round(simProgress * 100)}%</span>
-                            </div>
-                            <input
-                                type="range"
-                                min="0" max="1" step="0.001"
-                                value={simProgress}
-                                onChange={(e) => {
-                                    setSimProgress(parseFloat(e.target.value));
-                                    setIsSimulating(false);
-                                }}
-                                className="w-full accent-sky-500 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer"
-                            />
+                    <div className="flex-1 flex flex-col gap-1">
+                        <div className="flex justify-between text-xs text-slate-400">
+                            <span>Simulation Progress</span>
+                            <span>{Math.round(simProgress * 100)}%</span>
                         </div>
+                        <input
+                            type="range"
+                            min="0" max="1" step="0.001"
+                            value={simProgress}
+                            onChange={(e) => {
+                                setSimProgress(parseFloat(e.target.value));
+                                setIsSimulating(false);
+                            }}
+                            className="w-full accent-sky-500 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                        />
+                    </div>
 
-                        <div className="flex items-center gap-2">
-                            <span className="text-xs text-slate-400">Speed:</span>
-                            <select
-                                value={simSpeed}
-                                onChange={(e) => setSimSpeed(parseFloat(e.target.value))}
-                                className="bg-slate-900 border border-slate-700 text-xs text-slate-300 rounded px-1 py-1"
-                            >
-                                <option value="0.5">0.5x</option>
-                                <option value="1">1x</option>
-                                <option value="2">2x</option>
-                                <option value="5">5x</option>
-                                <option value="10">10x</option>
-                            </select>
-                        </div>
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-400">Speed:</span>
+                        <select
+                            value={simSpeed}
+                            onChange={(e) => setSimSpeed(parseFloat(e.target.value))}
+                            className="bg-slate-900 border border-slate-700 text-xs text-slate-300 rounded px-1 py-1"
+                        >
+                            <option value="0.5">0.5x</option>
+                            <option value="1">1x</option>
+                            <option value="2">2x</option>
+                            <option value="5">5x</option>
+                            <option value="10">10x</option>
+                        </select>
                     </div>
                 </div>
             </div>
         </div>
+
     );
 
     return content;

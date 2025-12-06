@@ -531,6 +531,8 @@ const App: React.FC = () => {
             onGroup={handleGroup}
             onUngroup={handleUngroup}
             onExplode={handleExplode}
+            onUndo={undo}
+            onRedo={redo}
           />
         </div>
 
@@ -540,10 +542,12 @@ const App: React.FC = () => {
             style={{ '--panel-width': `${rightPanelWidth}px` } as React.CSSProperties}
           >
             <div
-              className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-sky-500 hover:w-1.5 transition-all z-50 bg-slate-600"
+              className="absolute left-0 top-0 bottom-0 w-4 -ml-2 cursor-col-resize hover:bg-sky-500/10 transition-all z-50 flex items-center justify-center touch-none"
               onPointerDown={startResizing}
               title="Drag to resize"
-            />
+            >
+              <div className="w-1 h-full bg-slate-600 hover:bg-sky-500 transition-colors" />
+            </div>
 
             <div className="flex border-b border-slate-700 bg-slate-900 shrink-0 overflow-x-auto no-scrollbar">
               <TabButton id="properties" label="Design" icon={Layers} />
