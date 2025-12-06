@@ -51,9 +51,14 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({
     const [selectedSegmentIndices, setSelectedSegmentIndices] = useState<number[]>([]);
     const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null);
     const [cursorLineIndex, setCursorLineIndex] = useState<number | null>(null);
-
+    
+    // Drag Selection
+    const [isDragSelecting, setIsDragSelecting] = useState(false);
+    const [dragSelectionStart, setDragSelectionStart] = useState<{ x: number; y: number } | null>(null);
+    const [dragSelectionEnd, setDragSelectionEnd] = useState<{ x: number; y: number } | null>(null);
+    
     // Path Points - New state for showing points on selected paths
-    const [pathPoints, setPathPoints] = useState<{ x: number, y: number, z: number, segmentIndex: number, pointType: 'start' | 'end' }[]>([]);
+    const [pathPoints, setPathPoints] = useState<{x: number, y: number, z: number, segmentIndex: number, pointType: 'start' | 'end'}[]>([]);
 
     // Shape Editing
     const [isEditingShape, setIsEditingShape] = useState(false);
@@ -313,15 +318,24 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({
 
     const handlePointerDown = (e: React.PointerEvent) => {
         if (isSettingRaisePoint || isSettingLowerPoint) return;
-
+        
         const isLineElement = e.target instanceof SVGElement && e.target.tagName === 'line';
         if (isFullscreen && isLineElement) return;
-
+        
+        // Check if we're starting a drag selection (Shift+Left Click)
+        if (e.button === 0 && e.shiftKey) {
+            e.preventDefault();
+            setIsDragSelecting(true);
+            setDragSelectionStart({ x: e.clientX, y: e.clientY });
+            setDragSelectionEnd({ x: e.clientX, y: e.clientY });
+            return;
+        }
+        
         e.currentTarget.setPointerCapture(e.pointerId);
         isDraggingRef.current = true;
         hasDraggedRef.current = false;
         lastMousePosRef.current = { x: e.clientX, y: e.clientY };
-
+        
         if (e.button === 2 || e.button === 1) {
             dragModeRef.current = 'PAN';
         } else {
@@ -330,17 +344,24 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({
     };
 
     const handlePointerMove = (e: React.PointerEvent) => {
+        // Handle drag selection
+        if (isDragSelecting && dragSelectionStart) {
+            e.preventDefault();
+            setDragSelectionEnd({ x: e.clientX, y: e.clientY });
+            return;
+        }
+        
         if (!isDraggingRef.current) return;
         e.preventDefault();
         const dx = e.clientX - lastMousePosRef.current.x;
         const dy = e.clientY - lastMousePosRef.current.y;
-
+        
         if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
             hasDraggedRef.current = true;
         }
-
+        
         lastMousePosRef.current = { x: e.clientX, y: e.clientY };
-
+        
         if (dragModeRef.current === 'ROTATE') {
             setRotation(prev => ({
                 x: Math.min(Math.max(prev.x + dy, 0), 180), // Clamp tilt
@@ -355,6 +376,63 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({
     };
 
     const handlePointerUp = (e: React.PointerEvent) => {
+        // Handle drag selection completion
+        if (isDragSelecting && dragSelectionStart && dragSelectionEnd) {
+            // Calculate the bounding box in SVG coordinates
+            const svgRect = e.currentTarget.getBoundingClientRect();
+            
+            // Account for current pan and zoom
+            const currentScale = vbSize / (svgRect.width * zoom);
+            
+            // Convert screen coordinates to SVG coordinates, accounting for pan and zoom
+            const adjustedStartX = (dragSelectionStart.x - svgRect.left) * currentScale - vbSize / 2 - pan.x;
+            const adjustedStartY = (dragSelectionStart.y - svgRect.top) * currentScale - vbSize / 2 - pan.y;
+            const adjustedEndX = (dragSelectionEnd.x - svgRect.left) * currentScale - vbSize / 2 - pan.x;
+            const adjustedEndY = (dragSelectionEnd.y - svgRect.top) * currentScale - vbSize / 2 - pan.y;
+            
+            // Calculate bounding box
+            const minX = Math.min(adjustedStartX, adjustedEndX);
+            const maxX = Math.max(adjustedStartX, adjustedEndX);
+            const minY = Math.min(adjustedStartY, adjustedEndY);
+            const maxY = Math.max(adjustedStartY, adjustedEndY);
+            
+            // Find segments that intersect with the selection box
+            const newSelectedIndices: number[] = [];
+            segments.forEach((segment, idx) => {
+                const p1 = project(segment.x1, segment.y1, segment.z1);
+                const p2 = project(segment.x2, segment.y2, segment.z2);
+                
+                // Check if either endpoint is inside the selection box
+                const p1Inside = p1.x >= minX && p1.x <= maxX && p1.y >= minY && p1.y <= maxY;
+                const p2Inside = p2.x >= minX && p2.x <= maxX && p2.y >= minY && p2.y <= maxY;
+                
+                // Check if the line intersects the selection box
+                const lineIntersects = 
+                    Math.min(p1.x, p2.x) <= maxX && 
+                    Math.max(p1.x, p2.x) >= minX && 
+                    Math.min(p1.y, p2.y) <= maxY && 
+                    Math.max(p1.y, p2.y) >= minY;
+                
+                if (p1Inside || p2Inside || lineIntersects) {
+                    newSelectedIndices.push(idx);
+                }
+            });
+            
+            // Update selection
+            setSelectedSegmentIndices(prev => {
+                const combined = Array.from(new Set([...prev, ...newSelectedIndices]));
+                // Update path points for the newly selected segments
+                updatePathPoints(combined);
+                return combined;
+            });
+            
+            // Clear drag selection state
+            setIsDragSelecting(false);
+            setDragSelectionStart(null);
+            setDragSelectionEnd(null);
+            return;
+        }
+        
         // Allow all interactions in fullscreen mode (pan, rotate, move)
         isDraggingRef.current = false;
         e.currentTarget.releasePointerCapture(e.pointerId);
@@ -364,6 +442,36 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({
         // Allow zoom in fullscreen mode
         const zoomFactor = 1.1;
         setZoom(z => e.deltaY > 0 ? z / zoomFactor : z * zoomFactor);
+    };
+
+    // Helper function to check if a point is inside a rectangle
+    const isPointInRect = (px: number, py: number, rect: {minX: number, minY: number, maxX: number, maxY: number}) => {
+        return px >= rect.minX && px <= rect.maxX && py >= rect.minY && py <= rect.maxY;
+    };
+
+    // Helper function to check if a line intersects a rectangle
+    const doesLineIntersectRect = (x1: number, y1: number, x2: number, y2: number, rect: {minX: number, minY: number, maxX: number, maxY: number}) => {
+        // Check if either endpoint is inside the rectangle
+        if (isPointInRect(x1, y1, rect) || isPointInRect(x2, y2, rect)) return true;
+        
+        // Check if line intersects any edge of the rectangle
+        const intersectsLeft = lineIntersectsLine(x1, y1, x2, y2, rect.minX, rect.minY, rect.minX, rect.maxY);
+        const intersectsRight = lineIntersectsLine(x1, y1, x2, y2, rect.maxX, rect.minY, rect.maxX, rect.maxY);
+        const intersectsTop = lineIntersectsLine(x1, y1, x2, y2, rect.minX, rect.minY, rect.maxX, rect.minY);
+        const intersectsBottom = lineIntersectsLine(x1, y1, x2, y2, rect.minX, rect.maxY, rect.maxX, rect.maxY);
+        
+        return intersectsLeft || intersectsRight || intersectsTop || intersectsBottom;
+    };
+
+    // Helper function to check if two lines intersect
+    const lineIntersectsLine = (x1: number, y1: number, x2: number, y2: number, x3: number, y3: number, x4: number, y4: number) => {
+        const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+        if (denom === 0) return false;
+        
+        const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
+        const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom;
+        
+        return t >= 0 && t <= 1 && u >= 0 && u <= 1;
     };
 
     const handleDeleteSegments = () => {
@@ -876,6 +984,43 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({
                     {/* Bounds Box */}
                     <rect x={bounds.minX} y={bounds.minY} width={bounds.maxX - bounds.minX} height={bounds.maxY - bounds.minY} fill="none" stroke="#64748b" strokeWidth="0.5" strokeDasharray="5,5" />
 
+                    {/* Drag Selection Rectangle */}
+                    {isDragSelecting && dragSelectionStart && dragSelectionEnd && (
+                        <>
+                            {/* Convert screen coordinates to SVG coordinates */}
+                            {(() => {
+                                const svgRect = (document.querySelector('svg') as SVGSVGElement)?.getBoundingClientRect();
+                                if (!svgRect) return null;
+                                
+                                const scaleX = vbSize / svgRect.width;
+                                const scaleY = vbSize / svgRect.height;
+                                
+                                const startX = (dragSelectionStart.x - svgRect.left) * scaleX - vbSize / 2;
+                                const startY = (dragSelectionStart.y - svgRect.top) * scaleY - vbSize / 2;
+                                const endX = (dragSelectionEnd.x - svgRect.left) * scaleX - vbSize / 2;
+                                const endY = (dragSelectionEnd.y - svgRect.top) * scaleY - vbSize / 2;
+                                
+                                const minX = Math.min(startX, endX);
+                                const maxX = Math.max(startX, endX);
+                                const minY = Math.min(startY, endY);
+                                const maxY = Math.max(startY, endY);
+                                
+                                return (
+                                    <rect
+                                        x={minX}
+                                        y={minY}
+                                        width={maxX - minX}
+                                        height={maxY - minY}
+                                        fill="rgba(59, 130, 246, 0.1)"
+                                        stroke="#3b82f6"
+                                        strokeWidth="1"
+                                        strokeDasharray="5,5"
+                                    />
+                                );
+                            })()}
+                        </>
+                    )}
+
                     {/* G-Code Path */}
                     <g>
                         {segments.map((segment, idx) => {
@@ -899,9 +1044,10 @@ const SimulatorPanel: React.FC<SimulatorPanelProps> = ({
                                                     ? "#60a5fa" // Blue for G0 moves
                                                     : "#34d399" // Green for G1+ moves
                                     }
-                                    strokeWidth={isHighlighted || isSelected ? 3 : 1}
+                                    strokeWidth={isHighlighted || isSelected ? 5 : 3}
                                     opacity={isHighlighted || isSelected ? 1 : 0.7}
                                     className="cursor-pointer"
+                                    style={{ pointerEvents: 'stroke', strokeLinecap: 'round' }}
                                     onClick={(e) => {
                                         e.stopPropagation();
                                         if (e.shiftKey && lastClickedIndex !== null) {
