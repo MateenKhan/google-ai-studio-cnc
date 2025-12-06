@@ -18,7 +18,7 @@ const FONTS: Record<string, string> = {
 
 export const AVAILABLE_FONTS = Object.keys(FONTS);
 
-async function loadFont(fontFamily: string): Promise<opentype.Font | null> {
+export async function loadFont(fontFamily: string): Promise<opentype.Font | null> {
     const key = Object.keys(FONTS).find(k => fontFamily.toLowerCase().includes(k.toLowerCase())) || 'Roboto Mono';
     const url = FONTS[key];
 

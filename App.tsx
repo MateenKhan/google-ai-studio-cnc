@@ -11,8 +11,8 @@ import GrblSettingsPanel from './components/GrblSettingsPanel';
 import SimulatorPanel from './components/SimulatorPanel';
 import CalibrationHelper from './components/CalibrationHelper';
 import Ripple from './components/Ripple';
-import { Shape, ShapeType, MachineSettings, Tool, Unit, GroupShape, MachineStatus } from './types';
-import { generateGCode } from './services/gcodeService';
+import { Shape, ShapeType, MachineSettings, Tool, Unit, RectangleShape, CircleShape, TextShape, HeartShape, LineShape, PolylineShape, GroupShape, MirrorMode, MachineStatus } from './types';
+import { generateGCode, loadFont } from './services/gcodeService';
 // import { explainGCode } from './services/geminiService';
 import { parseSvgToShapes, shapesToSvg, calculateGCodeBounds } from './utils';
 import { Layers, FileCode, Settings, Terminal, Cpu, Play } from 'lucide-react';
@@ -348,7 +348,7 @@ const App: React.FC = () => {
     setSelectedIds(children.map(c => c.id));
   };
 
-  const handleExplode = () => {
+  const handleExplode = async () => {
     if (selectedIds.length === 0) return;
     saveToHistory();
 
@@ -356,7 +356,8 @@ const App: React.FC = () => {
     const idsToDelete: string[] = [];
     const newSelectedIds: string[] = [];
 
-    shapes.forEach(shape => {
+    // Process shapes sequentially to handle async font loading
+    for (const shape of shapes) {
       if (selectedIds.includes(shape.id)) {
         if (shape.type === ShapeType.RECTANGLE) {
           idsToDelete.push(shape.id);
@@ -392,6 +393,133 @@ const App: React.FC = () => {
             newShapes.push(line);
             newSelectedIds.push(line.id);
           }
+        } else if (shape.type === ShapeType.GROUP) {
+          idsToDelete.push(shape.id);
+          const group = shape as GroupShape;
+          const children = group.children.map(c => {
+            // Adjust coordinates relative to group
+            if (c.type === ShapeType.LINE) {
+              const l = c as LineShape;
+              return {
+                ...c,
+                x: l.x + group.x,
+                y: l.y + group.y,
+                x2: l.x2 + group.x,
+                y2: l.y2 + group.y
+              };
+            }
+            return {
+              ...c,
+              x: c.x + group.x,
+              y: c.y + group.y
+            };
+          });
+          newShapes.push(...children);
+          newSelectedIds.push(...children.map(c => c.id));
+
+        } else if (shape.type === ShapeType.TEXT) {
+          idsToDelete.push(shape.id);
+          const textShape = shape as TextShape;
+          const font = await loadFont(textShape.fontFamily || 'Roboto Mono');
+
+          if (font) {
+            const path = font.getPath(textShape.text, textShape.x, textShape.y, textShape.fontSize, { letterSpacing: textShape.letterSpacing });
+            let lastX = 0, lastY = 0, startX = 0, startY = 0;
+
+            const mirrorMode = textShape.mirrorMode || (textShape.mirror ? MirrorMode.WHOLE : MirrorMode.NONE);
+            const mx = (val: number) => {
+              if (mirrorMode === MirrorMode.WHOLE) return textShape.x - (val - textShape.x);
+              return val;
+            };
+
+            // We need to handle CHAR mirroring if needed, but for now let's stick to simple path conversion
+            // If CHAR mirroring is needed, we'd need to iterate chars like in gcodeService.
+            // For simplicity in explode, let's assume standard text or WHOLE mirroring which is easier on the path.
+            // If CHAR mirroring is active, the path generation in gcodeService is complex.
+            // Let's use a simplified approach: if CHAR mirroring, we might skip or warn, OR just implement the loop.
+            // Given the complexity, let's replicate the loop if it's CHAR mirror.
+
+            if (mirrorMode === MirrorMode.CHAR) {
+              // Complex case: iterate characters
+              let cursorX = textShape.x;
+              for (const char of textShape.text) {
+                const charPath = font.getPath(char, cursorX, textShape.y, textShape.fontSize);
+                const bbox = charPath.getBoundingBox();
+                const centerX = (bbox.x1 + bbox.x2) / 2;
+
+                for (const cmd of charPath.commands) {
+                  const cmx = (val: number) => centerX - (val - centerX);
+                  if (cmd.type === 'M') {
+                    lastX = cmd.x; lastY = cmd.y; startX = cmd.x; startY = cmd.y;
+                  } else if (cmd.type === 'L') {
+                    const line: Shape = { id: uuidv4(), type: ShapeType.LINE, x: cmx(lastX), y: lastY, x2: cmx(cmd.x), y2: cmd.y };
+                    newShapes.push(line); newSelectedIds.push(line.id);
+                    lastX = cmd.x; lastY = cmd.y;
+                  } else if (cmd.type === 'Z') {
+                    const line: Shape = { id: uuidv4(), type: ShapeType.LINE, x: cmx(lastX), y: lastY, x2: cmx(startX), y2: startY };
+                    newShapes.push(line); newSelectedIds.push(line.id);
+                    lastX = startX; lastY = startY;
+                  } else if (cmd.type === 'Q' || cmd.type === 'C') {
+                    const steps = 5;
+                    for (let i = 1; i <= steps; i++) {
+                      const t = i / steps;
+                      let px, py;
+                      if (cmd.type === 'Q') {
+                        px = (1 - t) * (1 - t) * lastX + 2 * (1 - t) * t * cmd.x1 + t * t * cmd.x;
+                        py = (1 - t) * (1 - t) * lastY + 2 * (1 - t) * t * cmd.y1 + t * t * cmd.y;
+                      } else {
+                        // @ts-ignore
+                        px = Math.pow(1 - t, 3) * lastX + 3 * Math.pow(1 - t, 2) * t * cmd.x1 + 3 * (1 - t) * Math.pow(t, 2) * cmd.x2 + Math.pow(t, 3) * cmd.x;
+                        // @ts-ignore
+                        py = Math.pow(1 - t, 3) * lastY + 3 * Math.pow(1 - t, 2) * t * cmd.y1 + 3 * (1 - t) * Math.pow(t, 2) * cmd.y2 + Math.pow(t, 3) * cmd.y;
+                      }
+                      const line: Shape = { id: uuidv4(), type: ShapeType.LINE, x: cmx(lastX), y: lastY, x2: cmx(px), y2: py };
+                      newShapes.push(line); newSelectedIds.push(line.id);
+                      lastX = px; lastY = py;
+                    }
+                    lastX = cmd.x; lastY = cmd.y;
+                  }
+                }
+                const advance = font.getAdvanceWidth(char, textShape.fontSize);
+                cursorX += advance + (textShape.letterSpacing || 0);
+              }
+            } else {
+              // Standard or WHOLE mirror
+              for (const cmd of path.commands) {
+                if (cmd.type === 'M') {
+                  lastX = cmd.x; lastY = cmd.y; startX = cmd.x; startY = cmd.y;
+                } else if (cmd.type === 'L') {
+                  const line: Shape = { id: uuidv4(), type: ShapeType.LINE, x: mx(lastX), y: lastY, x2: mx(cmd.x), y2: cmd.y };
+                  newShapes.push(line); newSelectedIds.push(line.id);
+                  lastX = cmd.x; lastY = cmd.y;
+                } else if (cmd.type === 'Z') {
+                  const line: Shape = { id: uuidv4(), type: ShapeType.LINE, x: mx(lastX), y: lastY, x2: mx(startX), y2: startY };
+                  newShapes.push(line); newSelectedIds.push(line.id);
+                  lastX = startX; lastY = startY;
+                } else if (cmd.type === 'Q' || cmd.type === 'C') {
+                  const steps = 5;
+                  for (let i = 1; i <= steps; i++) {
+                    const t = i / steps;
+                    let px, py;
+                    if (cmd.type === 'Q') {
+                      px = (1 - t) * (1 - t) * lastX + 2 * (1 - t) * t * cmd.x1 + t * t * cmd.x;
+                      py = (1 - t) * (1 - t) * lastY + 2 * (1 - t) * t * cmd.y1 + t * t * cmd.y;
+                    } else {
+                      // @ts-ignore
+                      px = Math.pow(1 - t, 3) * lastX + 3 * Math.pow(1 - t, 2) * t * cmd.x1 + 3 * (1 - t) * Math.pow(t, 2) * cmd.x2 + Math.pow(t, 3) * cmd.x;
+                      // @ts-ignore
+                      py = Math.pow(1 - t, 3) * lastY + 3 * Math.pow(1 - t, 2) * t * cmd.y1 + 3 * (1 - t) * Math.pow(t, 2) * cmd.y2 + Math.pow(t, 3) * cmd.y;
+                    }
+                    const line: Shape = { id: uuidv4(), type: ShapeType.LINE, x: mx(lastX), y: lastY, x2: mx(px), y2: py };
+                    newShapes.push(line); newSelectedIds.push(line.id);
+                    lastX = px; lastY = py;
+                  }
+                  lastX = cmd.x; lastY = cmd.y;
+                }
+              }
+            }
+          }
+
         } else {
           // Keep other shapes as is
           newShapes.push(shape);
@@ -399,7 +527,10 @@ const App: React.FC = () => {
       } else {
         newShapes.push(shape);
       }
-    });
+    }
+
+    // Filter out deleted shapes
+    newShapes = newShapes.filter(s => !idsToDelete.includes(s.id));
 
     setShapes(newShapes);
     setSelectedIds(newSelectedIds);
