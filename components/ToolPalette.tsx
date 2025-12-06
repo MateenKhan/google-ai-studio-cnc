@@ -1,7 +1,7 @@
 
 import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Square, Circle, Type, MousePointer2, Hand, Ruler, Heart, Pen, Minus, LayoutTemplate, ChevronDown, Upload, Download, Group, Ungroup, Split, Undo2, Redo2, LassoSelect, Hexagon, Spline, Highlighter } from 'lucide-react';
+import { Square, Circle, Type, MousePointer2, Hand, Ruler, Heart, Pen, Minus, LayoutTemplate, ChevronDown, Upload, Download, Group, Ungroup, Split, Undo2, Redo2, LassoSelect, Hexagon, Spline, Highlighter, ZoomIn } from 'lucide-react';
 import { ShapeType, Tool, Unit } from '../types';
 import Ripple from './Ripple';
 
@@ -91,7 +91,7 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
     defaultIcon?: React.ReactNode,
     onSelect?: (id: T) => void,
     groupTitle: string,
-    color?: "sky" | "emerald" | "amber" | "violet"
+    color?: "sky" | "emerald" | "amber" | "violet" | "indigo"
   }) => {
 
     // Determine active item or default to first
@@ -105,6 +105,7 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
         case 'emerald': return 'bg-emerald-600 text-white shadow shadow-emerald-900/40';
         case 'amber': return 'bg-amber-600 text-white shadow shadow-amber-900/40';
         case 'violet': return 'bg-violet-600 text-white shadow shadow-violet-900/40';
+        case 'indigo': return 'bg-indigo-600 text-white shadow shadow-indigo-900/40';
         case 'sky': default: return 'bg-sky-600 text-white shadow shadow-sky-900/40';
       }
     }
@@ -116,6 +117,7 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
         case 'emerald': return `${base} bg-emerald-500/20 text-emerald-400`;
         case 'amber': return `${base} bg-amber-500/20 text-amber-400`;
         case 'violet': return `${base} bg-violet-500/20 text-violet-400`;
+        case 'indigo': return `${base} bg-indigo-500/20 text-indigo-400`;
         case 'sky': default: return `${base} bg-sky-500/20 text-sky-400`;
       }
     }
@@ -127,6 +129,7 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
         case 'emerald': return `${base} bg-emerald-600/20 text-emerald-400 border-emerald-500/30`;
         case 'amber': return `${base} bg-amber-600/20 text-amber-400 border-amber-500/30`;
         case 'violet': return `${base} bg-violet-600/20 text-violet-400 border-violet-500/30`;
+        case 'indigo': return `${base} bg-indigo-600/20 text-indigo-400 border-indigo-500/30`;
         case 'sky': default: return `${base} bg-sky-600/20 text-sky-400 border-sky-500/30`;
       }
     }
@@ -230,12 +233,19 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
             { id: Tool.FENCE_SELECT, icon: <Highlighter size={18} />, title: "Free Path Select (Fence)" }
           ]}
         />
-        <Ripple><button onClick={() => onSelectTool(Tool.PAN)} className={btnClass(activeTool === Tool.PAN, 'indigo')} title="Pan">
-          <Hand size={18} />
-        </button></Ripple>
-        <Ripple><button onClick={onToggleDimensions} className={btnClass(showDimensions, 'indigo')} title="Dimensions">
-          <Ruler size={18} />
-        </button></Ripple>
+
+        {/* View Group (Indigo) */}
+        <DropdownGroup
+          groupTitle="View"
+          activeId={activeTool}
+          color="indigo"
+          items={[
+            { id: Tool.PAN, icon: <Hand size={18} />, title: "Pan Tool", onClick: () => onSelectTool(Tool.PAN) },
+            { id: Tool.ZOOM, icon: <ZoomIn size={18} />, title: "Zoom Tool", onClick: () => onSelectTool(Tool.ZOOM) },
+            { id: 'DIMENSIONS', icon: <Ruler size={18} className={showDimensions ? "text-indigo-400" : ""} />, title: showDimensions ? "Hide Dimensions" : "Show Dimensions", onClick: onToggleDimensions }
+          ]}
+        />
+
         <div className="w-px h-8 bg-slate-700 mx-1 shrink-0"></div>
 
         <div className="w-px h-8 bg-slate-700 mx-1 shrink-0"></div>

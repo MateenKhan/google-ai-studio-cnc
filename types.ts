@@ -18,6 +18,7 @@ export enum Tool {
   POLYGON_SELECT = 'POLYGON_SELECT',
   FENCE_SELECT = 'FENCE_SELECT',
   PATH = 'PATH',
+  ZOOM = 'ZOOM',
 }
 
 export enum Unit {

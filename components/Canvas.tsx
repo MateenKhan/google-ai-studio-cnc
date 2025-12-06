@@ -102,6 +102,7 @@ const Canvas: React.FC<CanvasProps> = ({
     const [snapPoint, setSnapPoint] = useState<{ x: number, y: number } | null>(null);
     const [hoveredId, setHoveredId] = useState<string | null>(null);
     const [lassoPoints, setLassoPoints] = useState<{ x: number, y: number }[]>([]);
+    const [cursorPos, setCursorPos] = useState<{ x: number, y: number } | null>(null);
 
     const getSVGPoint = (event: React.PointerEvent | React.TouchEvent | React.WheelEvent | MouseEvent) => {
         const svg = svgRef.current;
@@ -290,6 +291,55 @@ const Canvas: React.FC<CanvasProps> = ({
             return;
         }
 
+        if (activeTool === Tool.ZOOM) {
+            const pt = getSVGPoint(e);
+
+            // Zoom In at the clicked point
+            const currentZoom = zoomRef.current;
+            const newZoom = Math.min(currentZoom * 2, 20); // Double zoom
+
+            if (Math.abs(newZoom - currentZoom) < 0.001) return; // Max zoom reached
+
+            // We want the point `pt` (in SVG coords) to remain at the same screen position.
+            // SVG -> Screen: screenX = (svgX - panX) * zoom
+            // svgX = screenX / zoom + panX
+
+            // Current Pan
+            const currentPan = panRef.current;
+
+            // Calculate screen position of the clicked point currently
+            // But wait, our pan logic is simpler: 
+            // setPan({ x: newPanX, y: newPanY });
+
+            // Let's use logic:
+            // The point pt.x should correspond to the same relative position.
+            // actually, simpler logic:
+            // center zoom on the clicked point
+            // newPanX = pt.x - (pt.x - currentPan.x) * (currentZoom / newZoom)
+            // No, that's not quite right.
+
+            // Let's use the wheel logic approach:
+            // Relative mouse position from viewport center? No.
+
+            // Correct approach:
+            // 1. Get click position relative to Viewport (Screen Coords)
+            //    screenX = e.clientX - rect.left ... 
+            // 2. newPanX = currentPan.x + mouseX * (1/currentZoom - 1/newZoom)
+
+            const rect = containerRef.current?.getBoundingClientRect();
+            if (!rect) return;
+
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            const newPanX = currentPan.x + mouseX * (1 / currentZoom - 1 / newZoom);
+            const newPanY = currentPan.y + mouseY * (1 / currentZoom - 1 / newZoom);
+
+            setZoom(newZoom);
+            setPan({ x: newPanX, y: newPanY });
+            return;
+        }
+
         if (activeTool === Tool.POLYGON_SELECT) {
             // If we are already drawing a polygon (dragMode is POLYGON_SELECT), add a point
             // If not, start a new one
@@ -401,6 +451,12 @@ const Canvas: React.FC<CanvasProps> = ({
     };
 
     const handlePointerMove = (e: React.PointerEvent) => {
+        // Always track cursor for tools that need previews (Path, etc)
+        if (activeTool === Tool.PATH || activeTool === Tool.PEN || dragMode === 'PATH') {
+            const pt = getSVGPoint(e);
+            setCursorPos(pt);
+        }
+
         if (dragMode === 'PAN' && panStartRef.current) {
             const dx = (e.clientX - panStartRef.current.x) / zoom;
             const dy = (e.clientY - panStartRef.current.y) / zoom;
@@ -1209,6 +1265,21 @@ const Canvas: React.FC<CanvasProps> = ({
                     </div>
                 )
             }
+
+            {/* Rubber Band for Path Tool */}
+            {(activeTool === Tool.PATH || dragMode === 'PATH') && currentPolyline && currentPolyline.points.length > 0 && cursorPos && (
+                <line
+                    x1={currentPolyline.points[currentPolyline.points.length - 1].x}
+                    y1={currentPolyline.points[currentPolyline.points.length - 1].y}
+                    x2={cursorPos.x}
+                    y2={cursorPos.y}
+                    stroke="#22d3ee"
+                    strokeWidth={1 / zoom}
+                    strokeDasharray={`${5 / zoom} ${5 / zoom}`}
+                    pointerEvents="none"
+                />
+            )}
+
         </div >
     );
 };

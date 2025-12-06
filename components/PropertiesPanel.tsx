@@ -51,10 +51,10 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
   useEffect(() => {
     // If user selects a shape, switch to properties view unless explicitly already in layers
+    // or if we want to support staying in layers view while selecting.
+    // Given the dual capability, we'll let user control tabs manually mostly.
     if (selectedShapes.length > 0 && activeTab === 'layers') {
-      // Optional: decide if we want to auto-switch. 
-      // For now, let's NOT auto-switch to properties if they are already browsing layers, 
-      // as they might be selecting from the layer list.
+      // do nothing, let them manage layers
     } else if (selectedShapes.length > 0 && activeTab === 'properties') {
       // ensure we stay in properties
     }
@@ -98,26 +98,43 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     setEditingNameId(null);
   };
 
+  const getShapeIcon = (type: ShapeType) => {
+    switch (type) {
+      case ShapeType.RECTANGLE: return <Square size={14} className="text-sky-400 group-hover:text-sky-300" />;
+      case ShapeType.CIRCLE: return <Circle size={14} className="text-emerald-400 group-hover:text-emerald-300" />;
+      case ShapeType.TEXT: return <Type size={14} className="text-amber-400 group-hover:text-amber-300" />;
+      case ShapeType.HEART: return <Heart size={14} className="text-pink-400 group-hover:text-pink-300" />;
+      case ShapeType.LINE: return <Minus size={14} className="text-indigo-400 group-hover:text-indigo-300 -rotate-45" />;
+      case ShapeType.POLYLINE: return <Spline size={14} className="text-violet-400 group-hover:text-violet-300" />;
+      case ShapeType.GROUP: return <Group size={14} className="text-slate-200 group-hover:text-white" />;
+      default: return <Settings size={14} />;
+    }
+  };
+
   const LayersList = () => {
     return (
       <div className="flex flex-col gap-1">
         {allShapes.slice().reverse().map(shape => { // Reverse to show top-most first
           const isSelected = selectedShapes.some(s => s.id === shape.id);
+
+          let activeBorder = 'border-slate-800';
+          if (isSelected) {
+            if (shape.type === ShapeType.RECTANGLE) activeBorder = 'border-sky-500/50 bg-sky-500/10';
+            else if (shape.type === ShapeType.CIRCLE) activeBorder = 'border-emerald-500/50 bg-emerald-500/10';
+            else if (shape.type === ShapeType.TEXT) activeBorder = 'border-amber-500/50 bg-amber-500/10';
+            else if (shape.type === ShapeType.HEART) activeBorder = 'border-pink-500/50 bg-pink-500/10';
+            else activeBorder = 'border-slate-500/50 bg-slate-500/10';
+          }
+
           return (
             <div
               key={shape.id}
-              className={`flex items-center justify-between p-2 rounded cursor-pointer border ${isSelected ? 'bg-sky-900/40 border-sky-700' : 'bg-slate-900 border-slate-800 hover:border-slate-700'}`}
+              className={`group flex items-center justify-between p-2 rounded cursor-pointer border transition-all ${isSelected ? activeBorder : 'bg-slate-900 border-slate-800 hover:border-slate-600 hover:bg-slate-800'}`}
               onClick={(e) => onSelectShape?.(shape.id, e.shiftKey || e.ctrlKey)}
             >
               <div className="flex items-center gap-2 overflow-hidden">
-                <span className="text-slate-500 shrink-0">
-                  {shape.type === ShapeType.GROUP ? <Group size={14} /> :
-                    shape.type === ShapeType.TEXT ? <Type size={14} /> :
-                      shape.type === ShapeType.RECTANGLE ? <Square size={14} /> :
-                        shape.type === ShapeType.CIRCLE ? <Circle size={14} /> :
-                          shape.type === ShapeType.HEART ? <Heart size={14} /> :
-                            shape.type === ShapeType.LINE ? <Minus size={14} className="-rotate-45" /> :
-                              shape.type === ShapeType.POLYLINE ? <Spline size={14} /> : <Settings size={14} />}
+                <span className="shrink-0 transition-opacity">
+                  {getShapeIcon(shape.type)}
                 </span>
                 {editingNameId === shape.id ? (
                   <input
@@ -131,7 +148,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   />
                 ) : (
                   <span
-                    className="text-sm text-slate-300 truncate select-none"
+                    className={`text-sm truncate select-none transition-colors ${isSelected ? 'text-white font-medium' : 'text-slate-400 group-hover:text-slate-200'}`}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
                       handleNameEditStart(shape);
@@ -144,9 +161,10 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               <div className="flex opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity">
                 <button
                   onClick={(e) => { e.stopPropagation(); onDelete([shape.id]); }}
-                  className="text-slate-600 hover:text-red-400 p-1"
+                  className="text-slate-600 hover:text-red-400 hover:bg-red-400/10 p-1 rounded"
+                  title="Delete"
                 >
-                  <Trash2 size={12} />
+                  <Trash2 size={14} />
                 </button>
               </div>
             </div>
@@ -237,9 +255,35 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
         {activeTab === 'layers' && (
           <div className="flex flex-col gap-4">
-            <div className="flex gap-2 mb-2">
-              <button onClick={onGroup} className="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs py-1 rounded border border-slate-600">Group</button>
-              <button onClick={onUngroup} className="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs py-1 rounded border border-slate-600">Ungroup</button>
+            <div className="flex flex-col gap-2 mb-2">
+              <div className="flex gap-2">
+                <button onClick={onGroup} className="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs py-1.5 rounded border border-slate-600 transition-colors">Group</button>
+                <button onClick={onUngroup} className="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs py-1.5 rounded border border-slate-600 transition-colors">Ungroup</button>
+              </div>
+              {(selectedShapes.length > 0 || allShapes.length > 0) && (
+                <div className="flex gap-2">
+                  {selectedShapes.length > 0 && (
+                    <button
+                      onClick={() => onDelete(selectedShapes.map(s => s.id))}
+                      className="flex-1 bg-red-900/20 hover:bg-red-900/40 text-red-400 text-xs py-1.5 rounded border border-red-900/30 transition-colors flex items-center justify-center gap-1"
+                    >
+                      <Trash2 size={12} /> Delete Selected
+                    </button>
+                  )}
+                  {allShapes.length > 0 && (
+                    <button
+                      onClick={() => {
+                        if (confirm('Delete ALL shapes?')) {
+                          onDelete(allShapes.map(s => s.id));
+                        }
+                      }}
+                      className="flex-1 bg-slate-800 hover:bg-red-900/20 text-slate-400 hover:text-red-400 text-xs py-1.5 rounded border border-slate-700 hover:border-red-900/30 transition-colors"
+                    >
+                      Clear All
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
             <LayersList />
           </div>
